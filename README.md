@@ -36,7 +36,7 @@ The catalog covers Console, VPS, Q1 storage, CDN, Cloud PC, AI, VPN, Cloud Brows
 
 First sign-in is required by the standard CLI workflow. Installed fictional demos then work offline. Online account actions always validate credentials. Access tokens expire; refresh tokens rotate and can be revoked in **Account → CLI devices**. Offline copies cannot be remotely erased by account revocation. Local logout clears credentials and offline access, and attempts online revocation; it reports when revocation could not be confirmed.
 
-Credentials: `${XDG_CONFIG_HOME:-~/.config}/kagnode/cli/account.json` (0600). Demo data: `${XDG_DATA_HOME:-~/.local/share}/kagnode/cli/` (0700 directory). Avoid sharing these directories. `NO_COLOR=1` disables terminal color. An HTTPS account origin is required; loopback HTTP is available solely for development with `login --server`.
+Credentials: `${XDG_CONFIG_HOME:-~/.config}/kagnode/cli/account.json` (0600). Demo data: `${XDG_DATA_HOME:-~/.local/share}/kagnode/cli/` (0700 directory). Avoid sharing these directories. The larger ASCII banner follows your terminal width. Redirected output stays plain; `NO_COLOR=1` or `TERM=dumb` disables terminal color. An HTTPS account origin is required; loopback HTTP is available solely for development with `login --server`.
 
 ## Build and test
 

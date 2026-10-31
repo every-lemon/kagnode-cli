@@ -21,12 +21,13 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 )
 
 //go:embed assets/*
 var assets embed.FS
 
-const version = "0.1.0"
+const version = "0.1.1"
 
 var productIDs = []string{"console", "vps", "q1", "cdn", "cloud-pc", "ai", "vpn", "cloud-browser", "edu", "biz", "enterprise", "tunnel", "status"}
 
@@ -186,16 +187,48 @@ func str(m map[string]any, k string) string {
 	}, v)
 }
 func num(m map[string]any, k string) int64 { v, _ := m[k].(float64); return int64(v) }
-func banner() {
-	color := os.Getenv("NO_COLOR") == "" && os.Getenv("TERM") != "dumb"
-	if color {
-		fmt.Print("\033[34m")
+
+// terminalSize uses the Linux terminal itself, so redirected logs stay uncolored.
+func terminalSize() (int, bool) {
+	var size [4]uint16
+	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, os.Stdout.Fd(), syscall.TIOCGWINSZ, uintptr(unsafe.Pointer(&size)))
+	if errno != 0 {
+		return 80, false
 	}
-	fmt.Println("   ▄████▄\n  ██████  ▌   KagNode.\n   ▀███  ▐    CLI " + version)
+	if size[1] == 0 {
+		return 80, true
+	}
+	return int(size[1]), true
+}
+func bannerArt(columns int) string {
+	name := "kagnode-ascii.txt"
+	if columns < 78 {
+		name = "kagnode-compact-ascii.txt"
+	}
+	if columns < 31 {
+		name = "kagnode-small-ascii.txt"
+	}
+	if columns < 19 {
+		return "KagNode.\n"
+	}
+	art, _ := assets.ReadFile("assets/" + name)
+	return string(art)
+}
+func banner() {
+	columns, terminal := terminalSize()
+	_, noColor := os.LookupEnv("NO_COLOR")
+	color := terminal && !noColor && os.Getenv("TERM") != "" && os.Getenv("TERM") != "dumb"
+	fmt.Println()
+	if color {
+		fmt.Print("\033[94m")
+	}
+	fmt.Print(bannerArt(columns))
 	if color {
 		fmt.Print("\033[0m")
 	}
+	fmt.Printf("\n  CLI %s\n", version)
 }
+
 func login(base string) error {
 	base, err := validBase(base)
 	if err != nil {

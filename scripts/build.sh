@@ -2,7 +2,7 @@
 set -euo pipefail
 umask 022
 cd "$(dirname "$0")/.."
-version=0.1.0
+version=0.1.1
 mkdir -p dist
 for arch in amd64 arm64; do
   out="dist/kagnode-cli_${version}_linux_${arch}"
@@ -30,4 +30,4 @@ CONTROL
   chmod 755 "$deb/usr/bin/kagnode"
   dpkg-deb --root-owner-group --build "$deb" "dist/kagnode-cli_${version}_${arch}.deb"
 done
-(cd dist && sha256sum *.tar.gz *.deb > SHA256SUMS)
+(cd dist && sha256sum "kagnode-cli_${version}_"*.tar.gz "kagnode-cli_${version}_"*.deb > SHA256SUMS)
