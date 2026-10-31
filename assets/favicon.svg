@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="#2563eb">
+  <!-- Transparent canvas; only the two KagNode mark paths are painted. -->
+  <path d="M4 18C4 9 11 4 23 5L18 27C10 28 4 25 4 18Z"/>
+  <path d="m25 11 4 5-3 10-4-3Z"/>
+</svg>

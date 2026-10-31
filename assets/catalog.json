@@ -1,0 +1,545 @@
+[
+  {
+    "id": "vps",
+    "title": "KagNode VPS",
+    "sample": {
+      "formatVersion": 1,
+      "product": "vps",
+      "projects": [
+        {
+          "id": "studio",
+          "name": "Northstar Studio"
+        },
+        {
+          "id": "lab",
+          "name": "Research Lab"
+        }
+      ],
+      "resources": [
+        {
+          "id": "vm-1",
+          "name": "web-production-01",
+          "project": "studio",
+          "os": "Ubuntu 24.04",
+          "region": "Ashburn",
+          "size": "2 vCPU · 4 GB RAM",
+          "storage": "40 GB",
+          "state": "Running",
+          "ip": "192.0.2.24"
+        },
+        {
+          "id": "vm-2",
+          "name": "build-runner-01",
+          "project": "studio",
+          "os": "Debian 12",
+          "region": "Ashburn",
+          "size": "4 vCPU · 8 GB RAM",
+          "storage": "80 GB",
+          "state": "Stopped",
+          "ip": "192.0.2.25"
+        }
+      ],
+      "settings": {},
+      "activity": []
+    }
+  },
+  {
+    "id": "q1",
+    "title": "KagNode Q1",
+    "sample": {
+      "formatVersion": 1,
+      "product": "q1",
+      "projects": [
+        {
+          "id": "studio",
+          "name": "Northstar Studio"
+        },
+        {
+          "id": "lab",
+          "name": "Research Lab"
+        }
+      ],
+      "resources": [
+        {
+          "id": "bucket-1",
+          "name": "studio-assets",
+          "project": "studio",
+          "kind": "bucket",
+          "region": "Ashburn",
+          "access": "Private",
+          "state": "Available"
+        },
+        {
+          "id": "object-1",
+          "name": "welcome.txt",
+          "project": "studio",
+          "kind": "object",
+          "bucket": "bucket-1",
+          "size": "2.4 KB",
+          "state": "Available"
+        },
+        {
+          "id": "object-2",
+          "name": "brand-guide.pdf",
+          "project": "studio",
+          "kind": "object",
+          "bucket": "bucket-1",
+          "size": "1.8 MB",
+          "state": "Available"
+        }
+      ],
+      "settings": {},
+      "activity": []
+    }
+  },
+  {
+    "id": "cdn",
+    "title": "KagNode CDN",
+    "sample": {
+      "formatVersion": 1,
+      "product": "cdn",
+      "projects": [
+        {
+          "id": "studio",
+          "name": "Northstar Studio"
+        },
+        {
+          "id": "lab",
+          "name": "Research Lab"
+        }
+      ],
+      "resources": [
+        {
+          "id": "rule-1",
+          "name": "Static assets",
+          "project": "studio",
+          "pattern": "/assets/*",
+          "ttl": "1 hour",
+          "state": "Enabled"
+        },
+        {
+          "id": "rule-2",
+          "name": "API responses",
+          "project": "studio",
+          "pattern": "/api/*",
+          "ttl": "Bypass",
+          "state": "Enabled"
+        }
+      ],
+      "settings": {
+        "cached": 1284,
+        "requests": 8432,
+        "hitRate": 92
+      },
+      "activity": []
+    }
+  },
+  {
+    "id": "cloud-pc",
+    "title": "KagNode Cloud PC",
+    "sample": {
+      "formatVersion": 1,
+      "product": "cloud-pc",
+      "projects": [
+        {
+          "id": "studio",
+          "name": "Northstar Studio"
+        },
+        {
+          "id": "lab",
+          "name": "Research Lab"
+        }
+      ],
+      "resources": [
+        {
+          "id": "desktop-1",
+          "name": "Design workspace",
+          "project": "studio",
+          "os": "Linux",
+          "hardware": "KVM virtual desktop",
+          "state": "Stopped"
+        },
+        {
+          "id": "desktop-2",
+          "name": "Mac workspace",
+          "project": "studio",
+          "os": "macOS",
+          "hardware": "Dedicated physical Mac mini",
+          "state": "Stopped"
+        }
+      ],
+      "settings": {},
+      "activity": []
+    }
+  },
+  {
+    "id": "ai",
+    "title": "KagNode AI API",
+    "sample": {
+      "formatVersion": 1,
+      "product": "ai",
+      "projects": [
+        {
+          "id": "studio",
+          "name": "Northstar Studio"
+        },
+        {
+          "id": "lab",
+          "name": "Research Lab"
+        }
+      ],
+      "resources": [],
+      "settings": {
+        "model": "Example Small",
+        "prompt": "Summarize the benefits of a clear product interface.",
+        "scenario": "Summary",
+        "response": ""
+      },
+      "activity": []
+    }
+  },
+  {
+    "id": "vpn",
+    "title": "KagNode VPN",
+    "sample": {
+      "formatVersion": 1,
+      "product": "vpn",
+      "projects": [
+        {
+          "id": "studio",
+          "name": "Northstar Studio"
+        },
+        {
+          "id": "lab",
+          "name": "Research Lab"
+        }
+      ],
+      "resources": [
+        {
+          "id": "device-1",
+          "name": "Studio laptop",
+          "project": "studio",
+          "platform": "Linux",
+          "gateway": "Ashburn",
+          "state": "Disconnected"
+        },
+        {
+          "id": "device-2",
+          "name": "Work phone",
+          "project": "studio",
+          "platform": "iOS",
+          "gateway": "Regional gateway (example)",
+          "state": "Disconnected"
+        }
+      ],
+      "settings": {},
+      "activity": []
+    }
+  },
+  {
+    "id": "cloud-browser",
+    "title": "KagNode Cloud Browser",
+    "sample": {
+      "formatVersion": 1,
+      "product": "cloud-browser",
+      "projects": [
+        {
+          "id": "studio",
+          "name": "Northstar Studio"
+        },
+        {
+          "id": "lab",
+          "name": "Research Lab"
+        }
+      ],
+      "resources": [
+        {
+          "id": "browser-1",
+          "name": "Research session",
+          "project": "studio",
+          "browser": "Firefox",
+          "state": "Stopped"
+        }
+      ],
+      "settings": {
+        "tab": "Welcome",
+        "tabs": [
+          "Welcome"
+        ],
+        "page": "Welcome"
+      },
+      "activity": []
+    }
+  },
+  {
+    "id": "edu",
+    "title": "KagNode EDU",
+    "sample": {
+      "formatVersion": 1,
+      "product": "edu",
+      "projects": [
+        {
+          "id": "studio",
+          "name": "Northstar Studio"
+        },
+        {
+          "id": "lab",
+          "name": "Research Lab"
+        }
+      ],
+      "resources": [
+        {
+          "id": "class-1",
+          "name": "Design & technology",
+          "project": "studio",
+          "kind": "classroom",
+          "teacher": "Alex Morgan",
+          "state": "Active"
+        },
+        {
+          "id": "class-2",
+          "name": "Computer science",
+          "project": "studio",
+          "kind": "classroom",
+          "teacher": "Sam Lee",
+          "state": "Active"
+        },
+        {
+          "id": "pupil-1",
+          "name": "Student workstation 01",
+          "project": "studio",
+          "kind": "device",
+          "classroom": "class-1",
+          "state": "Online"
+        },
+        {
+          "id": "pupil-2",
+          "name": "Student workstation 02",
+          "project": "studio",
+          "kind": "device",
+          "classroom": "class-1",
+          "state": "Online"
+        }
+      ],
+      "settings": {
+        "classroom": "class-1",
+        "policy": false
+      },
+      "activity": []
+    }
+  },
+  {
+    "id": "biz",
+    "title": "KagNode Biz",
+    "sample": {
+      "formatVersion": 1,
+      "product": "biz",
+      "projects": [
+        {
+          "id": "studio",
+          "name": "Northstar Studio"
+        },
+        {
+          "id": "lab",
+          "name": "Research Lab"
+        }
+      ],
+      "resources": [
+        {
+          "id": "member-1",
+          "name": "Alex Morgan",
+          "project": "studio",
+          "kind": "member",
+          "role": "Admin",
+          "email": "alex@example.test",
+          "state": "Active"
+        },
+        {
+          "id": "member-2",
+          "name": "Sam Lee",
+          "project": "studio",
+          "kind": "member",
+          "role": "Member",
+          "email": "sam@example.test",
+          "state": "Active"
+        },
+        {
+          "id": "device-1",
+          "name": "Studio workstation",
+          "project": "studio",
+          "kind": "device",
+          "owner": "Alex Morgan",
+          "state": "Approved"
+        }
+      ],
+      "settings": {
+        "approval": true,
+        "vpn": false
+      },
+      "activity": []
+    }
+  },
+  {
+    "id": "enterprise",
+    "title": "KagNode Enterprise",
+    "sample": {
+      "formatVersion": 1,
+      "product": "enterprise",
+      "projects": [
+        {
+          "id": "studio",
+          "name": "Northstar Studio"
+        },
+        {
+          "id": "lab",
+          "name": "Research Lab"
+        }
+      ],
+      "resources": [
+        {
+          "id": "brief-1",
+          "name": "Private application network",
+          "project": "studio",
+          "organization": "Northstar Studio",
+          "requirements": "Isolated workloads with a documented recovery plan.",
+          "region": "Ashburn",
+          "state": "Draft"
+        }
+      ],
+      "settings": {},
+      "activity": []
+    }
+  },
+  {
+    "id": "tunnel",
+    "title": "KagNode Tunnel",
+    "sample": {
+      "formatVersion": 1,
+      "product": "tunnel",
+      "projects": [
+        {
+          "id": "studio",
+          "name": "Northstar Studio"
+        },
+        {
+          "id": "lab",
+          "name": "Research Lab"
+        }
+      ],
+      "resources": [
+        {
+          "id": "connector-1",
+          "name": "studio-connector",
+          "project": "studio",
+          "kind": "connector",
+          "state": "Disconnected"
+        },
+        {
+          "id": "route-1",
+          "name": "Preview application",
+          "project": "studio",
+          "kind": "route",
+          "hostname": "app.example.test",
+          "target": "localhost:3000",
+          "connector": "connector-1",
+          "state": "Configured"
+        }
+      ],
+      "settings": {},
+      "activity": []
+    }
+  },
+  {
+    "id": "status",
+    "title": "KagNode Status",
+    "sample": {
+      "formatVersion": 1,
+      "product": "status",
+      "projects": [
+        {
+          "id": "studio",
+          "name": "Northstar Studio"
+        },
+        {
+          "id": "lab",
+          "name": "Research Lab"
+        }
+      ],
+      "resources": [
+        {
+          "id": "service-1",
+          "name": "Sample compute",
+          "project": "studio",
+          "kind": "component",
+          "state": "Operational"
+        },
+        {
+          "id": "service-2",
+          "name": "Sample storage",
+          "project": "studio",
+          "kind": "component",
+          "state": "Operational"
+        },
+        {
+          "id": "service-3",
+          "name": "Sample networking",
+          "project": "studio",
+          "kind": "component",
+          "state": "Operational"
+        },
+        {
+          "id": "incident-1",
+          "name": "Scheduled maintenance",
+          "project": "studio",
+          "kind": "incident",
+          "component": "service-3",
+          "state": "Resolved",
+          "updates": [
+            "Maintenance scheduled.",
+            "Maintenance completed."
+          ]
+        }
+      ],
+      "settings": {},
+      "activity": []
+    }
+  },
+  {
+    "id": "console",
+    "title": "KagNode Console",
+    "sample": {
+      "formatVersion": 1,
+      "product": "console",
+      "projects": [
+        {
+          "id": "studio",
+          "name": "Northstar Studio"
+        },
+        {
+          "id": "lab",
+          "name": "Research Lab"
+        }
+      ],
+      "resources": [
+        {
+          "id": "project-1",
+          "name": "Northstar Studio",
+          "project": "studio",
+          "type": "Project",
+          "region": "Ashburn",
+          "state": "Active"
+        },
+        {
+          "id": "project-2",
+          "name": "Research Lab",
+          "project": "studio",
+          "type": "Project",
+          "region": "Dallas–Fort Worth",
+          "state": "Active"
+        }
+      ],
+      "settings": {},
+      "activity": []
+    }
+  }
+]
