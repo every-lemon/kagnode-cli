@@ -54,4 +54,4 @@ The release script creates Linux amd64/arm64 archives, Debian packages and check
 
 AGPL-3.0-only; see [LICENSE](LICENSE). [Brand policy](BRAND-POLICY.md) is separate from software rights. Forks and modifications are allowed under the license. Identify independent deployments clearly; do not imply KagNode operates them.
 
-[KagNode](https://nebulacoder.com) · [Developer](https://dev.nebulacoder.com) · [Logo assets](https://github.com/every-lemon/kagnode-logos)
+[KagNode](https://nebulacoder.com) · [Developer](https://developer.nebulacoder.com) · [Logo assets](https://github.com/every-lemon/kagnode-logos)
