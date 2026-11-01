@@ -27,7 +27,7 @@ import (
 //go:embed assets/*
 var assets embed.FS
 
-const version = "0.1.1"
+const version = "1.0.0"
 
 var productIDs = []string{"console", "vps", "q1", "cdn", "cloud-pc", "ai", "vpn", "cloud-browser", "edu", "biz", "enterprise", "tunnel", "status"}
 

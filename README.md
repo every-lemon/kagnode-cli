@@ -1,8 +1,10 @@
-<p align="center"><img src="https://raw.githubusercontent.com/every-lemon/kagnode-logos/main/svg/cli-light.svg" width="440" alt="KagNode. CLI"></p>
+<p align="center"><img src="assets/kagnode-wordmark.svg" width="440" alt="KagNode. CLI"></p>
 
 # KagNode CLI
 
 A Linux command line interface for your KagNode account and **fictional cloud demos**. Sign in through your browser, then explore all 13 products in a terminal or a local web interface. There is no live provisioning, inference or billing API in this release.
+
+Version **1.0.0** is the first stable CLI release for account sign-in and isolated examples. Cloud resource commands remain fictional until their services and APIs are implemented.
 
 ## Install
 
@@ -30,7 +32,7 @@ kagnode demo reset
 kagnode logout
 ```
 
-The catalog covers Console, VPS, Q1 storage, CDN, Cloud PC, AI, VPN, Cloud Browser, EDU, Biz, Enterprise, Tunnel and Status. Terminal resource commands are deliberately generic sample operations; the browser examples provide the richer product-specific flows. AI replies are predefined sample output.
+The catalog covers Console, VPS, Q1 storage, CDN, Cloud PC, AI, VPN, Cloud Browser, Education, Business, Enterprise, Tunnel and Status. Terminal resource commands are deliberately generic sample operations; the browser examples provide the richer product-specific flows. AI replies are predefined sample output.
 
 ## Account and local data
 

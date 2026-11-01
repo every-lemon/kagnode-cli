@@ -273,7 +273,7 @@
   },
   {
     "id": "edu",
-    "title": "KagNode EDU",
+    "title": "KagNode Education",
     "sample": {
       "formatVersion": 1,
       "product": "edu",
@@ -330,7 +330,7 @@
   },
   {
     "id": "biz",
-    "title": "KagNode Biz",
+    "title": "KagNode Business",
     "sample": {
       "formatVersion": 1,
       "product": "biz",
