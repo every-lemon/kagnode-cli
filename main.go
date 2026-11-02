@@ -201,32 +201,82 @@ func terminalSize() (int, bool) {
 	return int(size[1]), true
 }
 func bannerArt(columns int) string {
-	name := "kagnode-ascii.txt"
-	if columns < 78 {
-		name = "kagnode-compact-ascii.txt"
+	for _, name := range []string{"kagnode-display-ascii.txt", "kagnode-ascii.txt", "kagnode-compact-ascii.txt", "kagnode-small-ascii.txt"} {
+		art, err := assets.ReadFile("assets/" + name)
+		if err != nil {
+			continue
+		}
+		fits := true
+		for _, line := range strings.Split(string(art), "\n") {
+			if len(line) >= columns {
+				fits = false
+				break
+			}
+		}
+		if fits {
+			return string(art)
+		}
 	}
-	if columns < 31 {
-		name = "kagnode-small-ascii.txt"
-	}
-	if columns < 19 {
+	if columns > 8 {
 		return "KagNode.\n"
 	}
-	art, _ := assets.ReadFile("assets/" + name)
-	return string(art)
+	if columns > 2 {
+		return "KN\n"
+	}
+	return ""
 }
 func banner() {
 	columns, terminal := terminalSize()
 	_, noColor := os.LookupEnv("NO_COLOR")
 	color := terminal && !noColor && os.Getenv("TERM") != "" && os.Getenv("TERM") != "dumb"
 	fmt.Println()
-	if color {
-		fmt.Print("\033[94m")
+	locale := os.Getenv("LC_ALL")
+	if locale == "" {
+		locale = os.Getenv("LC_CTYPE")
 	}
-	fmt.Print(bannerArt(columns))
-	if color {
-		fmt.Print("\033[0m")
+	if locale == "" {
+		locale = os.Getenv("LANG")
 	}
+	locale = strings.ToUpper(locale)
+	blocks := terminal && os.Getenv("TERM") != "dumb" && os.Getenv("TERM") != "" && (strings.Contains(locale, "UTF-8") || strings.Contains(locale, "UTF8"))
+	fmt.Print(renderBanner(columns, blocks, color))
 	fmt.Printf("\n  CLI %s\n", version)
+}
+
+func renderBanner(columns int, blocks, color bool) string {
+	art := bannerArt(columns)
+	if !color {
+		if blocks {
+			return strings.ReplaceAll(art, "#", "█")
+		}
+		return art
+	}
+	width := 0
+	for _, line := range strings.Split(art, "\n") {
+		if len(line) > width {
+			width = len(line)
+		}
+	}
+	cut := width
+	if width > 90 {
+		cut = 26
+	} else if width > 45 {
+		cut = 25
+	}
+	var result strings.Builder
+	for _, line := range strings.Split(strings.TrimSuffix(art, "\n"), "\n") {
+		at := cut
+		if at > len(line) {
+			at = len(line)
+		}
+		left, right := line[:at], line[at:]
+		if blocks {
+			left = strings.ReplaceAll(left, "#", "█")
+			right = strings.ReplaceAll(right, "#", "█")
+		}
+		result.WriteString("\033[94m" + left + "\033[97m" + right + "\033[0m\n")
+	}
+	return result.String()
 }
 
 func login(base string) error {

@@ -3,9 +3,53 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
+
+func TestBannerFitsTerminalWidths(t *testing.T) {
+	for _, width := range []int{1, 2, 3, 8, 9, 18, 19, 22, 23, 40, 68, 69, 80, 100, 112, 113, 120, 160} {
+		art := bannerArt(width)
+		for _, line := range strings.Split(art, "\n") {
+			if len(line) >= width {
+				t.Fatalf("banner wraps at %d columns: %q", width, line)
+			}
+		}
+		if strings.Contains(art, "\x1b") || strings.ContainsRune(art, '\t') || strings.ContainsRune(art, '\r') {
+			t.Fatal("control characters in plain banner")
+		}
+	}
+	if !strings.Contains(bannerArt(80), "#####") {
+		t.Fatal("standard terminal lost the block wordmark")
+	}
+	if len(bannerArt(120)) <= len(bannerArt(80)) {
+		t.Fatal("wide terminal did not select the larger layout")
+	}
+}
+
+func TestColorBannerPreservesUnicodeAndAlignment(t *testing.T) {
+	escape := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	for _, width := range []int{19, 23, 40, 69, 80, 113, 120} {
+		plain := renderBanner(width, true, false)
+		colored := renderBanner(width, true, true)
+		if !utf8.ValidString(colored) {
+			t.Fatal("color split a Unicode cell")
+		}
+		if escape.ReplaceAllString(colored, "") != plain {
+			t.Fatal("colored banner changed alignment")
+		}
+		for _, line := range strings.Split(plain, "\n") {
+			if utf8.RuneCountInString(line) >= width {
+				t.Fatalf("block banner wraps at %d", width)
+			}
+		}
+	}
+	if strings.Contains(renderBanner(80, false, false), "\x1b") {
+		t.Fatal("plain output contains terminal escapes")
+	}
+}
 
 func testHome(t *testing.T) {
 	t.Helper()
