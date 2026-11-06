@@ -177,6 +177,11 @@ def system_packages(files, package, version, out, epoch, arch="all", binary=Fals
             ["rpm", "--eval", "%{_rpmconfigdir}"], text=True
         ).strip()
         spec = specroot / "SPECS/package.spec"
+        owned = (
+            f"/usr/bin/kagnode\n/usr/share/doc/{package}"
+            if binary
+            else f"/usr/share/kagnode/{package}"
+        )
         spec.write_text(f"""Name: {package}
 Version: {rpmversion}
 Release: 1
@@ -199,7 +204,7 @@ Native service provisioning is not performed or qualified by this RPM.
 mkdir -p %{{buildroot}}
 cp -a {root}/. %{{buildroot}}/
 %files
-/usr/*
+{owned}
 """)
         subprocess.run(
             [
@@ -281,6 +286,7 @@ def build(out, native_cli=True):
                         "LICENSE",
                         "BRAND-POLICY.md",
                         "ARTWORK-LICENSE",
+                        "assets/kagnode-wordmark.svg",
                     ]
                 ]
                 archives(

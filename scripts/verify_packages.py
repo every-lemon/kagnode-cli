@@ -79,6 +79,15 @@ def validate(folder):
                 check=True,
                 stdout=subprocess.DEVNULL,
             )
+            owned = subprocess.check_output(
+                ["rpm", "-qpl", str(path)], text=True, stderr=subprocess.DEVNULL
+            ).splitlines()
+            if any(
+                name
+                in {"/usr", "/usr/bin", "/usr/share", "/usr/share/doc", "/etc", "/var"}
+                for name in owned
+            ):
+                raise ValueError("RPM must not own shared system directories")
             subprocess.run(
                 ["rpm", "-qpl", str(path)],
                 check=True,
