@@ -27,7 +27,7 @@ import (
 //go:embed assets/*
 var assets embed.FS
 
-const version = "1.0.0"
+const version = "1.1.0"
 
 var productIDs = []string{"console", "vps", "q1", "cdn", "cloud-pc", "ai", "vpn", "cloud-browser", "edu", "biz", "enterprise", "tunnel", "status"}
 
@@ -671,7 +671,7 @@ func serveDemo() error {
 	}
 	defer os.Remove(filepath.Join(pathFor("data"), "server.json"))
 	assetFS, _ := fs.Sub(assets, "assets")
-	files := http.FileServer(http.FS(assetFS))
+	files := builtDemoAssets(assetFS)
 	server := &http.Server{ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 8192}
 	server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Host != listener.Addr().String() {
@@ -799,9 +799,11 @@ func main() {
 	var err error
 	args := os.Args[1:]
 	if len(args) == 0 {
-		err = menu()
+		err = interactive()
 	} else {
 		switch args[0] {
+		case "tui":
+			err = terminalUI()
 		case "--version", "version":
 			fmt.Println("KagNode CLI " + version)
 		case "login":
@@ -828,7 +830,7 @@ func main() {
 		case "demo":
 			err = demoCommand(args[1:])
 		case "help", "--help", "-h":
-			fmt.Println("KagNode CLI " + version + "\n\n  kagnode                         Interactive menu\n  kagnode login [--server ORIGIN]  Browser device sign-in\n  kagnode whoami                   Check account online\n  kagnode logout                   Revoke and clear credentials\n  kagnode demo install             Install all fictional examples\n  kagnode demo start|stop          Local browser examples\n  kagnode demo list|reset          Products or reset sample state\n  kagnode demo PRODUCT list|create NAME|delete ID|settings\n  kagnode demo ai prompt TEXT      Predefined sample response\n\nDemos work offline after first sign-in. No live infrastructure or billing.")
+			fmt.Println("KagNode CLI " + version + "\n\n  kagnode                         Interactive terminal workspace\n  kagnode tui                     Open the keyboard TUI\n  kagnode login [--server ORIGIN]  Browser device sign-in\n  kagnode whoami                   Check account online\n  kagnode logout                   Revoke and clear credentials\n  kagnode demo install             Install all fictional examples\n  kagnode demo start|stop          Local browser examples\n  kagnode demo list|reset          Products or reset sample state\n  kagnode demo PRODUCT list|create NAME|delete ID|settings\n  kagnode demo ai prompt TEXT      Predefined sample response\n\nDemos work offline after first sign-in. No live infrastructure or billing.")
 		default:
 			err = errors.New("unknown command; run kagnode help")
 		}

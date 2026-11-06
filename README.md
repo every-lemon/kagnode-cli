@@ -4,7 +4,7 @@
 
 A Linux command line interface for your KagNode account and **fictional cloud demos**. Sign in through your browser, then explore all 13 products in a terminal or a local web interface. There is no live provisioning, inference or billing API in this release.
 
-Version **1.0.0** is the first stable CLI release for account sign-in and isolated examples. Cloud resource commands remain fictional until their services and APIs are implemented.
+Source version **1.1.0** adds a keyboard-driven terminal interface. Version 1.0.0 remains the existing stable release until new packages are published. Cloud resource commands remain fictional until their services and APIs are implemented.
 
 ## Install
 
@@ -22,7 +22,7 @@ The first command prints a verification address and a short code. Open the addre
 The browser demo listens on a random **loopback-only** port and prints a local access link. It does not send your account token to the browser. Run `kagnode demo stop` when finished. Web examples reset on refresh. Terminal example changes persist locally until reset. Both use the same starting fictional fixtures.
 
 ```sh
-kagnode                         # Interactive menu
+kagnode                         # Terminal interface
 kagnode demo list                # All 13 product examples
 kagnode demo vps list
 kagnode demo vps create "Design review"
@@ -33,6 +33,14 @@ kagnode logout
 ```
 
 The catalog covers Console, VPS, Q1 storage, CDN, Cloud PC, AI, VPN, Cloud Browser, Education, Business, Enterprise, Tunnel and Status. Terminal resource commands are deliberately generic sample operations; the browser examples provide the richer product-specific flows. AI replies are predefined sample output.
+
+## Terminal interface
+
+Run `kagnode` or `kagnode tui` in a Linux terminal. A product rail, command prompt and scrollable activity pane share the screen. Narrow terminals use a compact layout.
+
+Use `/products`, `/use vps`, `/list`, `/create "Example"`, `/login`, `/whoami`, `/logout` and `/help`. Up/Down recall commands, Tab completes a command, Page Up/Down scroll output, Ctrl+U clears the prompt, Ctrl+C cancels an operation, and `/quit` exits. Terminal settings are restored on exit. Commands call the existing CLI directly without a shell. The numeric menu remains available when a raw terminal is unavailable.
+
+Account actions are real. Product resources and AI responses are explicitly fictional examples; the TUI does not provision cloud services.
 
 ## Account and local data
 
@@ -49,6 +57,8 @@ go test ./...
 go build -trimpath -o kagnode .
 bash scripts/build.sh
 ```
+
+To regenerate browser assets after editing their readable source, install esbuild 0.28.2 as a build tool and run `ESBUILD=/path/to/esbuild python3 scripts/build-web.py`. The binary embeds minified pages and fingerprinted CSS/JS, with no public source maps. Source and licenses remain available; hashes aid caching and identification and cannot prevent inspection or licensed reuse.
 
 The release script creates Linux amd64/arm64 archives, Debian packages and checksums. The `assets` directory contains only fictional demo source and artwork, never private plans or account data. No installer script is downloaded and executed at runtime.
 
