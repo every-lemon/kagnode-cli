@@ -2,7 +2,7 @@
 set -euo pipefail
 umask 022
 cd "$(dirname "$0")/.."
-version=1.1.0
+version=$(sed -n 's/^const version = "\([^"]*\)"/\1/p' main.go)
 mkdir -p dist
 for arch in amd64 arm64; do
   out="dist/kagnode-cli_${version}_linux_${arch}"

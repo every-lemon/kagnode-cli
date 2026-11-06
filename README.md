@@ -1,14 +1,43 @@
-<p align="center"><img src="assets/kagnode-wordmark.svg" width="440" alt="KagNode. CLI"></p>
+<p align="center"><img src="assets/kagnode-wordmark.svg" width="440" alt="KagNode."></p>
 
 # KagNode CLI
 
-A Linux command line interface for your KagNode account and **fictional cloud demos**. Sign in through your browser, then explore all 13 products in a terminal or a local web interface. There is no live provisioning, inference or billing API in this release.
+## Overview
 
-Source version **1.1.0** adds a keyboard-driven terminal interface. Version 1.0.0 remains the existing stable release until new packages are published. Cloud resource commands remain fictional until their services and APIs are implemented.
+Linux terminal and browser tools for KagNode account sign-in and explicitly fictional cloud examples.
 
-## Install
+## Release status
 
-Download the matching Linux `amd64` or `arm64` archive or Debian package from [Releases](https://github.com/every-lemon/kagnode-cli/releases). Verify it against `SHA256SUMS`. Extract the archive and put `kagnode` on your PATH, or install the `.deb` with your package manager. The binary includes the demo assets and needs no Node.js installation.
+Product source: **1.1.0**. Packaging preview: **1.1.0-packaging.1**.
+
+Packaging prereleases do not change the latest stable release or establish new hardware or service compatibility. See [verification](docs/VERIFICATION.md) and [changelog](CHANGELOG.md).
+
+## Features
+
+- Browser-assisted account sign-in.
+- Interactive terminal interface and local browser examples.
+- Fictional product workflows; no live provisioning, inference or billing API.
+
+## Requirements
+
+Linux amd64 or arm64. Building from source requires Go as specified by go.mod; packaged binaries do not require Go or Node.js.
+
+## Installation and downloads
+
+Download from [GitHub Releases](https://github.com/every-lemon/kagnode-cli/releases). Verify `SHA256SUMS` before extracting or installing a package.
+
+| Payload | Formats | Support |
+| --- | --- | --- |
+| Complete source / artwork | `.tar.xz`, `.tar.gz`, `.zip` | Named top-level directory; manual setup |
+| Source preview | `.deb` | Source only; does not provision a service |
+| Source preview | `.rpm` | Rocky Linux 10 packaging preview; native services unverified |
+| Linux CLI binaries | `.deb`, preview `.rpm`, `.tar.xz`, `.tar.gz`, `.zip` | amd64 and arm64 |
+
+
+
+Source packages install under `/usr/share/kagnode/`; they do not replace an existing application, migrate data, start services or configure networking. CLI binary packages install /usr/bin/kagnode. See [package details](docs/PACKAGING.md).
+
+## Usage
 
 ```sh
 kagnode login
@@ -17,53 +46,36 @@ kagnode demo install
 kagnode demo start
 ```
 
-The first command prints a verification address and a short code. Open the address, sign in to KagNode, compare the code and approve the request you started. The CLI never asks for your password. It receives only profile/demo access; enrollment, Operator access and Team membership remain separate choices.
+See [operations and existing setup instructions](docs/OPERATIONS.md) for the full workflow and its prerequisites.
 
-The browser demo listens on a random **loopback-only** port and prints a local access link. It does not send your account token to the browser. Run `kagnode demo stop` when finished. Web examples reset on refresh. Terminal example changes persist locally until reset. Both use the same starting fictional fixtures.
+## Configuration and storage
 
-```sh
-kagnode                         # Terminal interface
-kagnode demo list                # All 13 product examples
-kagnode demo vps list
-kagnode demo vps create "Design review"
-kagnode demo ai prompt "Example request"
-kagnode demo q1 settings
-kagnode demo reset
-kagnode logout
-```
+Account credentials stay under the user-scoped KagNode XDG configuration directory; local demo data stays in its separate XDG data directory.
 
-The catalog covers Console, VPS, Q1 storage, CDN, Cloud PC, AI, VPN, Cloud Browser, Education, Business, Enterprise, Tunnel and Status. Terminal resource commands are deliberately generic sample operations; the browser examples provide the richer product-specific flows. AI replies are predefined sample output.
+## Security
 
-## Terminal interface
+Use HTTPS and least-privilege accounts for hosted services. Keep secrets and user data out of Git. Preview packages are for inspection and controlled testing; native service and hardware claims remain limited to recorded verification. See [security guidance](docs/SECURITY.md).
 
-Run `kagnode` or `kagnode tui` in a Linux terminal. A product rail, command prompt and scrollable activity pane share the screen. Narrow terminals use a compact layout.
-
-Use `/products`, `/use vps`, `/list`, `/create "Example"`, `/login`, `/whoami`, `/logout` and `/help`. Up/Down recall commands, Tab completes a command, Page Up/Down scroll output, Ctrl+U clears the prompt, Ctrl+C cancels an operation, and `/quit` exits. Terminal settings are restored on exit. Commands call the existing CLI directly without a shell. The numeric menu remains available when a raw terminal is unavailable.
-
-Account actions are real. Product resources and AI responses are explicitly fictional examples; the TUI does not provision cloud services.
-
-## Account and local data
-
-First sign-in is required by the standard CLI workflow. Installed fictional demos then work offline. Online account actions always validate credentials. Access tokens expire; refresh tokens rotate and can be revoked in **Account → CLI devices**. Offline copies cannot be remotely erased by account revocation. Local logout clears credentials and offline access, and attempts online revocation; it reports when revocation could not be confirmed.
-
-Credentials: `${XDG_CONFIG_HOME:-~/.config}/kagnode/cli/account.json` (0600). Demo data: `${XDG_DATA_HOME:-~/.local/share}/kagnode/cli/` (0700 directory). Avoid sharing these directories. The larger ASCII banner follows your terminal width. Redirected output stays plain; `NO_COLOR=1` or `TERM=dumb` disables terminal color. An HTTPS account origin is required; loopback HTTP is available solely for development with `login --server`.
-
-## Build and test
-
-Go 1.24 or later, standard library only:
+## Development and testing
 
 ```sh
 go test ./...
-go build -trimpath -o kagnode .
-bash scripts/build.sh
+go vet ./...
+python3 scripts/repository_check.py
+python3 scripts/format_source.py --check
+python3 scripts/release.py --output dist/packages
 ```
 
-To regenerate browser assets after editing their readable source, install esbuild 0.28.2 as a build tool and run `ESBUILD=/path/to/esbuild python3 scripts/build-web.py`. The binary embeds minified pages and fingerprinted CSS/JS, with no public source maps. Source and licenses remain available; hashes aid caching and identification and cannot prevent inspection or licensed reuse.
+Install the formatting dependencies from `requirements-format.txt`. Package building additionally needs `dpkg-deb`, `rpmbuild`, XZ support and, for CLI binaries, Go. Read [the repository map](docs/STRUCTURE.md) before editing generated files.
 
-The release script creates Linux amd64/arm64 archives, Debian packages and checksums. The `assets` directory contains only fictional demo source and artwork, never private plans or account data. No installer script is downloaded and executed at runtime.
+## Documentation
 
-## Source and license
+- [Repository structure](docs/STRUCTURE.md)
+- [Operations](docs/OPERATIONS.md)
+- [Packages and release process](docs/PACKAGING.md)
+- [Verification and limits](docs/VERIFICATION.md)
+- [Changelog](CHANGELOG.md)
 
-AGPL-3.0-only; see [LICENSE](LICENSE). [Brand policy](BRAND-POLICY.md) is separate from software rights. Forks and modifications are allowed under the license. Identify independent deployments clearly; do not imply KagNode operates them.
+## Licensing
 
-[KagNode](https://nebulacoder.com) · [Developer](https://developer.nebulacoder.com) · [Logo assets](https://github.com/every-lemon/kagnode-logos)
+See [LICENSE](LICENSE) and retained third-party notices. KagNode artwork retains its separate permission and brand policy; the application uses AGPL-3.0-only.

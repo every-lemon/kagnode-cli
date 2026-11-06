@@ -1,3 +1,10 @@
 dist/
 kagnode
 *.test
+
+# Repository release tooling
+dist/
+.build/
+.ruff_cache/
+__pycache__/
+*.pyc

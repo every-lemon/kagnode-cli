@@ -23,11 +23,15 @@
 .kn-scroll-rail:hover,.kn-scroll-rail:focus-visible { opacity: 1; background: #88888812; }
 .kn-scroll-rail:focus-visible { outline: 2px solid var(--accent,#8ab4ff); outline-offset: 2px; }
 .kn-scroll-rail[hidden] { display: none!important; }
-.kn-scroll-preference { border: 0; padding: 5px 0; margin: 0 6px; min-height: 32px; background: transparent; color: inherit; opacity: .8; font: inherit; font-size: 11px; cursor: pointer; text-align: start; }
-.kn-scroll-preference:hover { opacity: 1; text-decoration: underline; }
-@media (pointer:coarse) { .kn-scroll-y,.kn-scroll-y .kn-scroll-thumb { width: 12px; } .kn-scroll-x,.kn-scroll-x .kn-scroll-thumb { height: 12px; } }
-@media (prefers-reduced-motion:reduce) { .kn-scroll-rail { transition: none; } }
-@media print { .kn-scroll-rail,.kn-scroll-preference { display: none!important; } }
+
+.kn-scroll-settings{padding:20px 0;max-width:760px}.kn-scroll-settings h3{font:600 16px/1.4 system-ui;margin:0 0 8px}.kn-scroll-settings p{font:13px/1.6 system-ui;opacity:.75;margin:0 0 16px}.kn-scroll-options{display:flex;flex-wrap:wrap;gap:10px}.kn-scroll-options button{display:grid;gap:6px;flex:1;min-width:190px;text-align:left;padding:14px 17px;border:1px solid #8885;border-radius:12px;color:inherit;background:transparent;font:13px/1.5 system-ui;cursor:pointer}.kn-scroll-options button span{opacity:.75;font-size:12px}.kn-scroll-options button[aria-pressed=true]{border-color:#6699ee;background:#3978fa13}.kn-scroll-options button:focus-visible{outline:3px solid #6699ee;outline-offset:3px}.kn-preferences-button{font:12px/1.4 system-ui;color:inherit;border:1px solid #8885;background:transparent;border-radius:10px;padding:9px 12px;cursor:pointer}.kn-preferences-dialog{color:inherit;background:var(--kn-surface,var(--surface,#191b20));border:1px solid #8885;border-radius:20px;padding:24px;width:min(600px,calc(100% - 30px));max-height:85dvh;overflow:auto}.kn-preferences-dialog::backdrop{background:#0009}
+
+@media(pointer:coarse){.kn-scroll-y,.kn-scroll-y .kn-scroll-thumb{width:12px}.kn-scroll-x,.kn-scroll-x .kn-scroll-thumb{height:12px}}
+@media(prefers-reduced-motion:reduce){.kn-scroll-rail{transition:none}}
+@media print{.kn-scroll-rail,.kn-preferences-button,.kn-navigation-toggle,.kn-preferences-dialog{display:none!important}}
+.kn-navigation-toggle{display:none}
+@media(min-width:1024px){[data-kn-manual-navigation] .kn-navigation-toggle{display:grid;place-items:center;flex-shrink:0;width:34px;height:34px;padding:0;border:1px solid #8884;border-radius:9px;background:transparent;color:inherit;font:24px/1 system-ui;cursor:pointer}[data-kn-manual-navigation] .sidebar{transition:transform .18s ease}[data-kn-manual-navigation].kn-navigation-collapsed .sidebar{transform:translateX(calc(-100% - 30px));visibility:hidden}[data-kn-manual-navigation].kn-navigation-collapsed .workspace:not(#workspace){margin-left:0!important}[data-kn-manual-navigation].kn-navigation-collapsed .main{margin-left:0!important;width:100%!important}[data-kn-manual-navigation].kn-navigation-collapsed .topbar{left:0!important}[data-kn-manual-navigation].kn-navigation-collapsed .kn-product-signature{margin-left:24px!important}}
+@media(prefers-reduced-motion:reduce){[data-kn-manual-navigation] .sidebar{transition:none}}
 </style></head><body class="kn-ui"><div id="demo-app"></div><div id="feedback" role="status" aria-live="polite"></div><script type="application/json" id="demo-config">{"product":"enterprise","revision":1,"sample":{"formatVersion":1,"product":"enterprise","projects":[{"id":"studio","name":"Northstar Studio"},{"id":"lab","name":"Research Lab"}],"resources":[{"id":"brief-1","name":"Private application network","project":"studio","organization":"Northstar Studio","requirements":"Isolated workloads with a documented recovery plan.","region":"Ashburn","state":"Draft"}],"settings":{},"activity":[]}}</script><script>(() => {
  const config=JSON.parse(document.getElementById('demo-config').textContent);let channel='',callback,latest,ready=false;
  const send=(type,values={})=>{if(channel)parent.postMessage({protocol:'kagnode-demo-v1',channel,type,...values},'*');};
@@ -239,12 +243,13 @@ api.onInit(data=>{
   function move(state, axis, delta, immediate = false) {
     const d = dimensions(state.element, axis);
     if (!state.animation) state.target[axis] = d.value;
-    state.target[axis] = clamp(state.target[axis] + delta, d.max);
+    if (state.animation && Math.sign(state.target[axis] - d.value) !== Math.sign(delta)) stop(state);
+    state.target[axis] = clamp(d.value + Math.max(-d.length, Math.min(d.length, state.target[axis] - d.value + delta)), d.max);
     if (immediate || reduce.matches) { stop(state); setPosition(state, axis, d.value + delta); update(); return; }
     if (state.animation) return;
     let previous = performance.now();
     const tick = now => {
-      const blend = 1 - Math.exp(-Math.min(40, now - previous) / 45); previous = now;
+      const blend = 1 - Math.exp(-Math.min(40, now - previous) / 32); previous = now;
       let unfinished = false;
       for (const a of axes) {
         const current = dimensions(state.element, a), target = clamp(state.target[a], current.max), gap = target - current.value;
@@ -350,7 +355,7 @@ api.onInit(data=>{
     const dx = event.shiftKey ? event.deltaX || event.deltaY : event.deltaX, dy = event.shiftKey ? 0 : event.deltaY;
     const axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y', raw = axis === 'x' ? dx : dy;
     if (!raw) return; const state = choose(event.target,axis,raw); if (!state) return;
-    event.preventDefault(); const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? dimensions(state.element,axis).length : 1; move(state,axis,raw * unit);
+    event.preventDefault(); const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? dimensions(state.element,axis).length : 1; move(state,axis,raw * unit,event.deltaMode===0&&Math.abs(raw)<45);
   }, {passive: false});
   document.addEventListener('keydown', event => {
     if (!active() || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.target.closest('input,textarea,select,button,[contenteditable],[role=combobox],[role=listbox],[role=menu],[role=slider],.kn-scroll-rail,video,audio')) return;
@@ -393,16 +398,44 @@ api.onInit(data=>{
   document.addEventListener('load',scheduleScan,{capture:true,passive:true});
   document.addEventListener('click',event=>{if(Date.now()<suppressClickUntil){suppressClickUntil=0;event.preventDefault();event.stopImmediatePropagation();}},true);
   new MutationObserver(records => { if (records.some(r => !r.target.closest?.('.kn-scroll-rail,.kn-scroll-preference') && (r.type === 'childList' || r.attributeName === 'open' || r.attributeName === 'hidden' || r.attributeName === 'class'))) scheduleScan(); }).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['open','hidden','class']});
-  let preferenceButton;
+  function navigation() {
+    if (!document.body.hasAttribute('data-kn-manual-navigation')) return;
+    const sidebar=document.querySelector('.sidebar'),topbar=document.querySelector('.topbar');
+    if (!sidebar||!topbar||document.querySelector('[data-kn-navigation-toggle]')) return;
+    const button=document.createElement('button');button.type='button';button.className='kn-navigation-toggle';button.dataset.knNavigationToggle='';
+    if (!sidebar.id) sidebar.id='kn-navigation';button.setAttribute('aria-controls',sidebar.id);
+    let collapsed=false;try{collapsed=localStorage.getItem('kagnode.sidebarCollapsed')==='true';}catch{}
+    function paintNavigation(){document.body.classList.toggle('kn-navigation-collapsed',collapsed);button.setAttribute('aria-expanded',String(!collapsed));button.setAttribute('aria-label',collapsed?'Show navigation':'Hide navigation');button.title=collapsed?'Show navigation':'Hide navigation';button.textContent=collapsed?'›':'‹';scheduleScan();}
+    button.addEventListener('click',()=>{collapsed=!collapsed;try{localStorage.setItem('kagnode.sidebarCollapsed',String(collapsed));}catch{}paintNavigation();});
+    topbar.prepend(button);paintNavigation();
+  }
   function preference() {
-    if (!preferenceButton?.isConnected) {
-      preferenceButton = document.createElement('button'); preferenceButton.type = 'button'; preferenceButton.className = 'kn-scroll-preference';
-
-      preferenceButton.onclick = () => setMode(mode === 'custom' ? 'native' : 'custom');
+    navigation();
+    document.querySelectorAll('.kn-scroll-preference').forEach(node => node.remove());
+    for (const host of document.querySelectorAll('[data-kn-scroll-settings]')) {
+      if (!host.querySelector('[data-kn-scroll-choice]')) {
+        const title = document.createElement('h3'); title.textContent = 'Scrolling';
+        const note = document.createElement('p'); note.textContent = 'Choose how this browser scrolls. Your preference is saved on this device.';
+        const group = document.createElement('div'); group.className = 'kn-scroll-options'; group.setAttribute('role','group'); group.setAttribute('aria-label','Scrolling preference');
+        for (const [value,label,description] of [['custom','KagNode','Custom rails with responsive wheel scrolling.'],['native','System','Use your browser’s standard scrolling controls.']]) {
+          const button = document.createElement('button'); button.type = 'button'; button.dataset.knScrollChoice = value;
+          const strong = document.createElement('strong'); strong.textContent = label;
+          const detail = document.createElement('span'); detail.textContent = description;
+          button.append(strong,detail); button.addEventListener('click',()=>setMode(value)); group.append(button);
+        }
+        host.classList.add('kn-scroll-settings'); host.append(title,note,group);
+      }
+      host.querySelectorAll('[data-kn-scroll-choice]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.knScrollChoice===mode)));
     }
-    const host=[...document.querySelectorAll('.kn-product-signature,.portal-footer,.site-footer,.mail-footer,.main-footer,.sidebar-bottom,.auth-footer,.sim-footer')].find(element=>element.getClientRects().length&&!element.closest('[hidden],.hidden,[aria-hidden=true]'))||document.body;if(preferenceButton.parentElement!==host)host.append(preferenceButton);
-    preferenceButton.textContent = mode === 'custom' ? 'Use native scrolling' : 'Use KagNode scrolling';
-    preferenceButton.setAttribute('aria-pressed',String(mode === 'native'));
+    // Apps without a dedicated preferences page expose the same panel in Settings.
+    const topbar = document.querySelector('[data-kn-preferences-button-host],.topbar-right,.account-controls,.topbar,.sim-header,.demo-header');
+    if (!document.querySelector('[data-kn-scroll-settings]') && topbar && !document.querySelector('[data-kn-preference-open]')) {
+      const open = document.createElement('button'); open.type='button';open.className='kn-preferences-button';open.dataset.knPreferenceOpen='';open.textContent='Preferences';open.setAttribute('aria-haspopup','dialog');
+      const dialog=document.createElement('dialog');dialog.className='kn-preferences-dialog';dialog.setAttribute('aria-label','Interface preferences');
+      const close=document.createElement('button');close.type='button';close.className='kn-preferences-button';close.textContent='Close';close.addEventListener('click',()=>dialog.close());
+      const panel=document.createElement('section');panel.dataset.knScrollSettings='';dialog.append(close,panel);document.body.append(dialog);
+      open.addEventListener('click',()=>{preference();dialog.showModal();scheduleScan();});topbar.append(open);
+    }
   }
   function setMode(value) { mode = value === 'native' ? 'native' : 'custom'; try { localStorage.setItem('kagnode.scrollMode',mode); } catch {} scan(); }
   forced.addEventListener('change',scan); reduce.addEventListener('change',() => { for (const state of regions.values()) stop(state); });

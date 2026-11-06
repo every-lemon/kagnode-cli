@@ -1,7 +1,5 @@
 # KagNode scrolling
 
-Pages and overflow regions use the shared KagNode rails and real scroll positions. Wheel, touch, draggable thumbs and keyboard commands support nested regions and horizontal tables. Controls expose scrollbar roles and synchronized values. Reduced motion disables smoothing; pinch zoom is retained.
+The shared scroller changes actual scroll positions and supplies keyboard-accessible draggable rails. Small trackpad deltas respond directly; larger wheel steps use short easing that stops on reversal or direct interaction. Reduced motion and forced-color modes retain their accessibility behavior.
 
-Choose **Use native scrolling** in the visible footer to restore the browser controls. This preference is stored locally when browser storage is available. Sandboxed fictional examples cannot share browser storage and keep their choice for that frame only. The native behavior remains the fallback if JavaScript does not initialize. Forced-color mode uses native controls.
-
-Readable sources are `kagnode-scroll.js` and `kagnode-scroll.css` in the project's web/static/assets directory. Use the project's existing asset build after changes; production assets are minified and fingerprinted separately. Do not edit generated modules or hashed files.
+Choose KagNode or System scrolling in Account/Settings preferences. This browser-scoped preference is saved locally; no sidebar/footer toggle is injected. Source copies live beside each project’s web UI and are minified separately. Desktop sidebar collapse is manual and remembered; responsive mobile navigation remains separate.
