@@ -1,0 +1,17 @@
+/*! KagNode custom scrolling: tracks do not participate in content layout. */
+.kn-scroll-root,.kn-scroll-region { scroll-behavior:auto!important; scrollbar-width: none!important; touch-action: pinch-zoom; }
+.kn-scroll-root::-webkit-scrollbar,.kn-scroll-region::-webkit-scrollbar { display: none!important; width: 0!important; height: 0!important; }
+.kn-scroll-rail { position: fixed; z-index: 9000; box-sizing: border-box; border: 0; border-radius: 8px; padding: 0; margin: 0; background: transparent; user-select: none; touch-action: none; opacity: .6; transition: opacity .15s; cursor: pointer; }
+.kn-scroll-y { width: 9px; }
+.kn-scroll-x { height: 9px; }
+.kn-scroll-thumb { display: block; position: absolute; inset: 0 auto auto 0; background: #8b8b94; border: 2px solid transparent; background-clip: padding-box; border-radius: 8px; box-sizing: border-box; min-width: 0; min-height: 0; pointer-events: auto; }
+.kn-scroll-y .kn-scroll-thumb { width: 9px; }
+.kn-scroll-x .kn-scroll-thumb { height: 9px; }
+.kn-scroll-rail:hover,.kn-scroll-rail:focus-visible { opacity: 1; background: #88888812; }
+.kn-scroll-rail:focus-visible { outline: 2px solid var(--accent,#8ab4ff); outline-offset: 2px; }
+.kn-scroll-rail[hidden] { display: none!important; }
+.kn-scroll-preference { border: 0; padding: 5px 0; margin: 0 6px; min-height: 32px; background: transparent; color: inherit; opacity: .8; font: inherit; font-size: 11px; cursor: pointer; text-align: start; }
+.kn-scroll-preference:hover { opacity: 1; text-decoration: underline; }
+@media (pointer:coarse) { .kn-scroll-y,.kn-scroll-y .kn-scroll-thumb { width: 12px; } .kn-scroll-x,.kn-scroll-x .kn-scroll-thumb { height: 12px; } }
+@media (prefers-reduced-motion:reduce) { .kn-scroll-rail { transition: none; } }
+@media print { .kn-scroll-rail,.kn-scroll-preference { display: none!important; } }
