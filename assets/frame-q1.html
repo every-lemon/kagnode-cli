@@ -429,7 +429,7 @@ api.onInit(data=>{
     }
     // Apps without a dedicated preferences page expose the same panel in Settings.
     const topbar = document.querySelector('[data-kn-preferences-button-host],.topbar-right,.account-controls,.topbar,.sim-header,.demo-header');
-    if (!document.querySelector('[data-kn-scroll-settings]') && topbar && !document.querySelector('[data-kn-preference-open]')) {
+    if (!document.querySelector('[data-kn-scroll-settings],[data-page=account],a[href="/account"],a[href="/account/preferences"]') && topbar && !document.querySelector('[data-kn-preference-open]')) {
       const open = document.createElement('button'); open.type='button';open.className='kn-preferences-button';open.dataset.knPreferenceOpen='';open.textContent='Preferences';open.setAttribute('aria-haspopup','dialog');
       const dialog=document.createElement('dialog');dialog.className='kn-preferences-dialog';dialog.setAttribute('aria-label','Interface preferences');
       const close=document.createElement('button');close.type='button';close.className='kn-preferences-button';close.textContent='Close';close.addEventListener('click',()=>dialog.close());

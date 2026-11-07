@@ -1,0 +1,15 @@
+# Optional KagNode Account profiles
+
+Sign in to the application locally, then open Account/Settings preferences and choose Link KagNode Account. Open the displayed KagNode address, compare the code and approve the specific installation. Only your display name, stable profile identifier and photo are shared. Email addresses, passwords, mailbox access, vault encryption and local administrator roles stay separate. Accounts are never matched automatically by email.
+
+A local administrator can turn sync off for the whole installation. This clears local profile links and stops profile requests. Users retain local sign-in. Remote revocations are attempted with a bounded request; failed disconnections remain in a private retry queue visible to local administration. Turning sync back on requires each user to link again. You can also revoke a connection in KagNode Account → Connections → Self-hosted applications.
+
+Set KAGNODE_ACCOUNT_SYNC=off in the server's process environment to enforce disabled mode. Set KAGNODE_ACCOUNT_ISSUER to the exact HTTPS KagNode Account origin when migrating domains. Changing issuer clears old links and disables sync until a local administrator re-enables it; old tokens are never sent to the new origin. No callback hostname, incoming port or application secret needs to be registered: the user approves a short-lived code in KagNode Account.
+
+Local applications store refresh credentials only in private server-side storage. The browser receives profile data and a user code, never a KagNode access/refresh token. Polling is bounded, refreshes are serialized, profile refresh occurs at most once per fifteen minutes per link, and offline errors keep local accounts available. Only still WebP profile photos are accepted by the connection UI.
+
+Mail administrators use the existing local administrator confirmation. Authenticator assigns profile-sync administration to the retained legacy vault owner, or the first local account when there is no migrated owner; KAGNODE_ACCOUNT_ADMIN can specify a local account ID. This permission does not grant access to other encrypted vaults. VPN's local owner controls installation policy; HTTP Boot's private console credential controls its administrator profile. CLI is controlled by its local operating-system owner using `kagnode account sync on|off|status`; its existing account sign-in supplies the profile, and its browser examples provide the same preference.
+
+The new issuer endpoints are POST /api/v1/account-sync/device, POST /api/v1/account-sync/token, GET /api/v1/account-sync/profile?client_id=PROJECT and POST /api/v1/account-sync/revoke. They must exist on the configured KagNode Account server before linking succeeds. Local web controls use the app's existing session/CSRF mechanisms; Media versions them under /api/v1/kagnode-account.
+
+This source preview is validated with isolated and mocked profile requests. Packaging does not deploy the updated KagNode Account server, application servers or any native service. Logos and the downloaded artwork viewer remain account-free.

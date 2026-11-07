@@ -666,7 +666,9 @@
       "[data-kn-preferences-button-host],.topbar-right,.account-controls,.topbar,.sim-header,.demo-header",
     );
     if (
-      !document.querySelector("[data-kn-scroll-settings]") &&
+      !document.querySelector(
+        '[data-kn-scroll-settings],[data-page=account],a[href="/account"],a[href="/account/preferences"]',
+      ) &&
       topbar &&
       !document.querySelector("[data-kn-preference-open]")
     ) {

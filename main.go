@@ -32,13 +32,15 @@ const version = "1.1.0"
 var productIDs = []string{"console", "vps", "q1", "cdn", "cloud-pc", "ai", "vpn", "cloud-browser", "edu", "biz", "enterprise", "tunnel", "status"}
 
 type credentials struct {
-	Base    string `json:"base"`
-	Access  string `json:"access_token"`
-	Refresh string `json:"refresh_token"`
-	Expires int64  `json:"expires"`
-	Name    string `json:"name"`
-	ID      string `json:"id"`
-	Offline bool   `json:"offline_demo_access"`
+	Base           string `json:"base"`
+	Access         string `json:"access_token"`
+	Refresh        string `json:"refresh_token"`
+	Expires        int64  `json:"expires"`
+	Name           string `json:"name"`
+	Photo          string `json:"photo,omitempty"`
+	ProfileUpdated int64  `json:"profile_updated,omitempty"`
+	ID             string `json:"id"`
+	Offline        bool   `json:"offline_demo_access"`
 }
 type product struct {
 	ID     string         `json:"id"`
@@ -318,6 +320,9 @@ func login(base string) error {
 				return errors.New("unable to verify account")
 			}
 			c.Name = str(me, "name")
+			if photo := str(me, "photo"); profileSyncEnabled() && len(photo) <= 180000 && (photo == "" || profilePhotoPattern.MatchString(photo)) {
+				c.Photo = photo
+			}
 			c.ID = str(me, "id")
 			if err = saveCredentials(c); err != nil {
 				return err
@@ -362,6 +367,9 @@ func online(c *credentials) (map[string]any, error) {
 	}
 	if status != 200 {
 		return nil, errors.New("account access is unavailable; sign in again")
+	}
+	if err := cacheProfile(c, m); err != nil {
+		return nil, err
 	}
 	return m, nil
 }
@@ -708,7 +716,11 @@ func serveDemo() error {
 			http.Error(w, "Denied", 403)
 			return
 		}
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'")
+		if r.URL.Path == "/api/kagnode-account" {
+			serveAccountProfile(w, r, base)
+			return
+		}
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'none'")
 		w.Header().Set("X-Frame-Options", "DENY")
 		if strings.HasPrefix(r.URL.Path, "/demos/") && strings.HasSuffix(r.URL.Path, "/frame") {
 			id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/demos/"), "/frame")
@@ -817,6 +829,8 @@ func main() {
 			err = login(base)
 		case "logout":
 			err = logout()
+		case "account":
+			err = profileCommand(args[1:])
 		case "whoami":
 			var c credentials
 			c, err = readCredentials()
@@ -830,7 +844,7 @@ func main() {
 		case "demo":
 			err = demoCommand(args[1:])
 		case "help", "--help", "-h":
-			fmt.Println("KagNode CLI " + version + "\n\n  kagnode                         Interactive terminal workspace\n  kagnode tui                     Open the keyboard TUI\n  kagnode login [--server ORIGIN]  Browser device sign-in\n  kagnode whoami                   Check account online\n  kagnode logout                   Revoke and clear credentials\n  kagnode demo install             Install all fictional examples\n  kagnode demo start|stop          Local browser examples\n  kagnode demo list|reset          Products or reset sample state\n  kagnode demo PRODUCT list|create NAME|delete ID|settings\n  kagnode demo ai prompt TEXT      Predefined sample response\n\nDemos work offline after first sign-in. No live infrastructure or billing.")
+			fmt.Println("KagNode CLI " + version + "\n\n  kagnode                         Interactive terminal workspace\n  kagnode tui                     Open the keyboard TUI\n  kagnode login [--server ORIGIN]  Browser device sign-in\n  kagnode whoami                   Check account online\n  kagnode account sync on|off      Choose profile synchronization\n  kagnode logout                   Revoke and clear credentials\n  kagnode demo install             Install all fictional examples\n  kagnode demo start|stop          Local browser examples\n  kagnode demo list|reset          Products or reset sample state\n  kagnode demo PRODUCT list|create NAME|delete ID|settings\n  kagnode demo ai prompt TEXT      Predefined sample response\n\nDemos work offline after first sign-in. No live infrastructure or billing.")
 		default:
 			err = errors.New("unknown command; run kagnode help")
 		}

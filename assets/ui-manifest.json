@@ -1,8 +1,10 @@
 {
   "/demo-host.js": "/built/demo-host.d4f607aeb1bf39e8.js",
   "/demos.css": "/built/demos.e37f842ac2365fc7.css",
+  "/kagnode-account.css": "/built/kagnode-account.c410063540bdb835.css",
+  "/kagnode-account.js": "/built/kagnode-account.640dca0dfcc3cb31.js",
   "/kagnode-scroll.css": "/built/kagnode-scroll.4b9e5eb57100f166.css",
-  "/kagnode-scroll.js": "/built/kagnode-scroll.e1fe77af52b9aa7e.js",
+  "/kagnode-scroll.js": "/built/kagnode-scroll.18055e2dfe2da070.js",
   "/kagnode-ui.css": "/built/kagnode-ui.4a4be1b1f2b5041e.css",
   "/plan.css": "/built/plan.f24a8f83f0df540f.css",
   "/platform.css": "/built/platform.6294857ad71fcb51.css",

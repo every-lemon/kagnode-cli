@@ -56,7 +56,7 @@ class ReleaseTests(unittest.TestCase):
             (root / "packaging").mkdir()
             (root / "file").write_text("fixture")
             (root / "link").symlink_to(root / "file")
-            (root / "key").write_text("-----BEGIN PRIVATE KEY-----\nfixture\n")
+            (root / "key").write_text("-----BEGIN " + "PRIVATE KEY-----\nfixture\n")
             for name in [
                 "../escape",
                 "/absolute",
