@@ -292,6 +292,39 @@ class EcosystemTests(unittest.TestCase):
             with self.assertRaises(eco.ManagerError):
                 eco.bitwarden_setup(self.root, "https://vault.example.test", bad)
 
+    @unittest.skipUnless(os.geteuid() == 0, "engine installation requires root")
+    def test_bitwarden_setup_keeps_secrets_private_and_preserves_existing_engine(self):
+        temp = tempfile.TemporaryDirectory(dir="/root")
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name) / "kagnode"
+        image = "vaultwarden/server@sha256:" + "a" * 64
+        with patch.object(eco.subprocess, "run") as run:
+            result = eco.bitwarden_setup(
+                self.root, "https://vault.example.test", image, apply=True
+            )
+            base = self.root / "passwords/bitwarden"
+            token = (base / "admin.env").read_text()
+            self.assertTrue(token.startswith("ADMIN_TOKEN="))
+            self.assertEqual((base / "admin.env").stat().st_mode & 0o777, 0o600)
+            self.assertEqual(base.stat().st_mode & 0o777, 0o700)
+            self.assertNotIn(token.split("=", 1)[1].strip(), json.dumps(result))
+            compose = json.loads((base / "compose.json").read_text())
+            service = compose["services"]["vaultwarden"]
+            self.assertEqual(service["image"], image)
+            self.assertEqual(service["env_file"], ["./admin.env"])
+            self.assertEqual(service["environment"]["INVITATIONS_ALLOWED"], "false")
+            self.assertEqual(run.call_count, 2)
+            self.assertEqual(run.call_args_list[0].args[0][-1], "pull")
+            self.assertEqual(run.call_args_list[1].args[0][-2:], ["up", "-d"])
+            (base / "data/vault-fixture").write_text("retained")
+            with self.assertRaisesRegex(eco.ManagerError, "Existing engine"):
+                eco.bitwarden_setup(
+                    self.root, "https://vault.example.test", image, apply=True
+                )
+            self.assertEqual((base / "data/vault-fixture").read_text(), "retained")
+            self.assertEqual((base / "admin.env").read_text(), token)
+            self.assertEqual(run.call_count, 2)
+
 
 class SignatureTests(unittest.TestCase):
     def test_vpn_rejects_manifest_tampering(self):
