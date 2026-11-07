@@ -30,6 +30,11 @@ with tempfile.TemporaryDirectory(prefix="kagnode-cli-web-") as scratch:
     for file in sorted(source.iterdir()):
         if file.suffix not in (".css", ".js"):
             continue
+        if file.name.startswith("kn-core-"):
+            # Preserve signed Core bytes and hashes; do not minify them a second time.
+            (built / file.name).write_bytes(file.read_bytes())
+            manifest["/" + file.name] = "/built/" + file.name
+            continue
         out = Path(scratch) / file.name
         subprocess.run(
             [
