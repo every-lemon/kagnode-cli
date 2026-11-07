@@ -22,6 +22,8 @@
     } catch {}
   };
   const mobile = () => innerWidth < 1024;
+  const hover = matchMedia("(hover: hover) and (pointer: fine)");
+  const compactDefault = () => !mobile() && innerWidth < 1360 && hover.matches;
   const panelIcon =
     '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path class="kn-core-panel-divider" d="M8 4v16"/></svg>';
   const menuIcon =
@@ -35,7 +37,50 @@
     accountTrigger = null,
     lastFocus;
   const groups = new WeakMap();
-  let desktopCollapsed = saved("kagnode.core.sidebar.collapsed") === "true";
+  let manualChoice = saved("kagnode.core.sidebar.choice"),
+    desktopCollapsed = manualChoice
+      ? manualChoice === "collapsed"
+      : compactDefault(),
+    previewExpanded = false,
+    hoverTimer;
+  function preview(open) {
+    clearTimeout(hoverTimer);
+    if (!sidebar || mobile() || !desktopCollapsed) open = false;
+    previewExpanded = !!open;
+    root.dataset.corePreview = String(previewExpanded);
+    root.dataset.coreCollapsed = String(
+      !mobile() && desktopCollapsed && !previewExpanded,
+    );
+    root.classList.toggle(
+      "collapsed",
+      !mobile() && desktopCollapsed && !previewExpanded,
+    );
+    if (toggle) {
+      toggle.setAttribute(
+        "aria-expanded",
+        String(!desktopCollapsed || previewExpanded),
+      );
+      toggle.setAttribute(
+        "aria-label",
+        previewExpanded
+          ? "Keep sidebar open"
+          : desktopCollapsed
+            ? "Expand sidebar"
+            : "Collapse sidebar",
+      );
+    }
+    window.KagNodeScroll?.refresh();
+  }
+  function releasePreview() {
+    clearTimeout(hoverTimer);
+    hoverTimer = setTimeout(() => {
+      if (
+        !sidebar?.matches(":hover") &&
+        !sidebar?.contains(document.activeElement)
+      )
+        preview(false);
+    }, 180);
+  }
   function element(tag, cls, text) {
     const el = document.createElement(tag);
     if (cls) el.className = cls;
@@ -96,8 +141,15 @@
       requestAnimationFrame(() => window.KagNodeScroll?.refresh());
     }
   }
-  function setCollapsed(value) {
+  function setCollapsed(value, persist = true) {
+    clearTimeout(hoverTimer);
+    previewExpanded = false;
+    root.dataset.corePreview = "false";
     desktopCollapsed = !!value;
+    if (persist) {
+      manualChoice = desktopCollapsed ? "collapsed" : "expanded";
+      store("kagnode.core.sidebar.choice", manualChoice);
+    }
     value = !mobile() && desktopCollapsed;
     root.dataset.coreCollapsed = String(!!value);
     root.classList.toggle("collapsed", !!value);
@@ -109,7 +161,7 @@
       );
       toggle.title = value ? "Expand sidebar" : "Collapse sidebar";
     }
-    store("kagnode.core.sidebar.collapsed", String(desktopCollapsed));
+
     if (value)
       for (const d of all("details", sidebar)) {
         groups.get(d)?.motion?.cancel();
@@ -203,7 +255,22 @@
     scrim.setAttribute("aria-label", "Close navigation");
     document.body.append(scrim);
     scrim.addEventListener("click", () => drawer(false));
-    setCollapsed(saved("kagnode.core.sidebar.collapsed") === "true");
+    setCollapsed(desktopCollapsed, false);
+    sidebar.addEventListener("pointerenter", () => {
+      clearTimeout(hoverTimer);
+      if (hover.matches && !mobile() && desktopCollapsed)
+        hoverTimer = setTimeout(() => preview(true), 120);
+    });
+    sidebar.addEventListener("pointerleave", releasePreview);
+    sidebar.addEventListener("focusin", (e) => {
+      if (
+        !e.target.closest("[data-core-toggle]") &&
+        desktopCollapsed &&
+        !mobile()
+      )
+        preview(true);
+    });
+    sidebar.addEventListener("focusout", releasePreview);
     let mobileButton = $("[data-mobile],#mobile-menu");
     if (!mobileButton) {
       mobileButton = element("button", "kn-core-mobile-toggle");
@@ -315,6 +382,13 @@
         menu.append(action);
       }
       document.body.append(menu);
+    }
+    if (menu.id === "kn-core-account-menu") {
+      const name =
+        $("[data-kn-account-name]")?.textContent.trim() ||
+        config.name ||
+        "Your account";
+      $(".kn-core-account-identity strong", menu).textContent = name;
     }
     menu.dataset.coreAccountMenu = "";
     menu.hidden = false;
@@ -453,16 +527,26 @@
         svg.setAttribute("aria-hidden", "true");
         svg.innerHTML = paths;
         const previous = $(
-          ":scope > svg,:scope > .ui-icon,:scope > .icon",
+          ":scope > svg,:scope > .ui-icon,:scope > .icon,:scope > [data-icon],:scope > .nav-icon",
           link,
         );
-        if (previous) previous.replaceWith(svg);
+        if (previous?.matches("[data-icon]")) {
+          // Dynamic applications redraw these hosts; keep one leading icon.
+          previous.dataset.coreIconHost = "true";
+        } else if (previous) previous.replaceWith(svg);
         else link.prepend(svg);
         link.dataset.coreIconReady = "true";
         link.dataset.coreTooltip = label;
         link.removeAttribute("data-tooltip");
         link.setAttribute("aria-label", label);
       }
+    if (
+      window.KagNodeTheme?.session.authenticated &&
+      $("[data-core-account-trigger]")
+    ) {
+      for (const button of all(".topbar #lock-button,.topbar #logout-button"))
+        button.hidden = true;
+    }
     document.body.removeAttribute("data-kn-manual-navigation");
     document.body.classList.remove("kn-navigation-collapsed");
     shellActive();
@@ -507,7 +591,7 @@
         e.stopImmediatePropagation();
         if (button.matches("[data-dismiss-nav],#sidebar-close")) drawer(false);
         else if (mobile()) drawer(root.dataset.coreDrawer !== "true");
-        else setCollapsed(root.dataset.coreCollapsed !== "true");
+        else setCollapsed(!desktopCollapsed);
         return;
       }
       const summary = target.closest(".kn-core-nav-group > summary");
@@ -577,7 +661,7 @@
   addEventListener("resize", () => {
     closeAccount();
     if (sidebar) {
-      setCollapsed(desktopCollapsed);
+      setCollapsed(manualChoice ? desktopCollapsed : compactDefault(), false);
       sidebar.inert = mobile() && root.dataset.coreDrawer !== "true";
     }
     if (!mobile() && scrim) {
@@ -585,6 +669,9 @@
       scrim.hidden = true;
     }
     window.KagNodeScroll?.refresh();
+  });
+  hover.addEventListener("change", () => {
+    if (!manualChoice) setCollapsed(compactDefault(), false);
   });
   let queued = false;
   new MutationObserver((records) => {
