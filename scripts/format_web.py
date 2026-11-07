@@ -17,7 +17,7 @@ def run(check):
         for name in files
         if name.endswith((".js", ".css"))
         and "/built/" not in name
-        and not name.startswith("assets/frame-")
+        and not name.startswith(("assets/frame-", "assets/kn-core-", "vendor/"))
     ]
     selected += [
         name

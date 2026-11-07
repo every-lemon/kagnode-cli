@@ -17,8 +17,10 @@ import (
 var errSetup = errors.New("open ecosystem setup")
 var errSetupExit = errors.New("close ecosystem setup")
 
-func ecosystemCommand(args []string) error {
-	source, err := assets.ReadFile("assets/ecosystem.py")
+func ecosystemCommand(args []string) error { return managerCommand("ecosystem.py", args) }
+func coreCommand(args []string) error      { return managerCommand("core_manager.py", args) }
+func managerCommand(module string, args []string) error {
+	source, err := assets.ReadFile("assets/" + module)
 	if err != nil {
 		return err
 	}
@@ -27,7 +29,7 @@ func ecosystemCommand(args []string) error {
 		return err
 	}
 	defer os.RemoveAll(directory)
-	file := directory + "/ecosystem.py"
+	file := directory + "/" + module
 	if err = os.WriteFile(file, source, 0600); err != nil {
 		return err
 	}

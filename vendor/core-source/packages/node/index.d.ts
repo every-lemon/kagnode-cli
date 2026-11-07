@@ -1,0 +1,40 @@
+export interface CoreContext {
+  officialAccount?: boolean;
+  authenticated?: boolean;
+  subject?: string;
+  publicNavigation?: boolean;
+  issuer?: string;
+}
+export interface CoreManifest {
+  version: string;
+  ui_api: number;
+  entrypoints: Record<string, string>;
+  files: Record<string, { sha256: string; size: number; data?: string }>;
+}
+export function active(app: string): CoreManifest;
+export function manifest(version?: string): CoreManifest;
+export function asset(uri: string): { data: Buffer; type: string } | null;
+export function inject(
+  body: string,
+  app?: string,
+  context?: CoreContext,
+): string;
+export function installCore(
+  app: any,
+  options?: {
+    appId?: string;
+    context?: (request: any, response: any) => CoreContext;
+  },
+): void;
+export function managerRequest(
+  appId: string,
+  action?: string,
+  data?: Record<string, unknown>,
+): Promise<any>;
+export const iconLibrary: { name: string; label: string }[];
+export function icon(name: string): string;
+
+export function renderTemplate(
+  name: string,
+  slots?: Record<string, string>,
+): string;

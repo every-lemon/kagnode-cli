@@ -720,7 +720,8 @@ func serveDemo() error {
 			serveAccountProfile(w, r, base)
 			return
 		}
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'none'")
+		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin-allow-popups")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://nebulacoder.com; object-src 'none'; frame-ancestors 'none'; form-action 'none'")
 		w.Header().Set("X-Frame-Options", "DENY")
 		if strings.HasPrefix(r.URL.Path, "/demos/") && strings.HasSuffix(r.URL.Path, "/frame") {
 			id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/demos/"), "/frame")
@@ -845,10 +846,12 @@ func main() {
 			err = ecosystemSetup()
 		case "apps":
 			err = ecosystemCommand(args[1:])
+		case "core":
+			err = coreCommand(args[1:])
 		case "demo":
 			err = demoCommand(args[1:])
 		case "help", "--help", "-h":
-			fmt.Println("KagNode CLI " + version + "\n\n  kagnode                         Interactive terminal workspace\n  kagnode tui                     Open the keyboard TUI\n  kagnode setup                   Keyboard-only install and setup wizard\n  kagnode apps --help              Scriptable application manager\n  kagnode login [--server ORIGIN]  Browser device sign-in\n  kagnode whoami                   Check account online\n  kagnode account sync on|off      Choose profile synchronization\n  kagnode logout                   Revoke and clear credentials\n  kagnode demo install             Install all fictional examples\n  kagnode demo start|stop          Local browser examples\n  kagnode demo list|reset          Products or reset sample state\n  kagnode demo PRODUCT list|create NAME|delete ID|settings\n  kagnode demo ai prompt TEXT      Predefined sample response\n\nDemos work offline after first sign-in. No live infrastructure or billing.")
+			fmt.Println("KagNode CLI " + version + "\n\n  kagnode                         Interactive terminal workspace\n  kagnode tui                     Open the keyboard TUI\n  kagnode setup                   Keyboard-only install and setup wizard\n  kagnode apps --help              Scriptable application manager\n  kagnode core --help              Signed shared UI manager\n  kagnode login [--server ORIGIN]  Browser device sign-in\n  kagnode whoami                   Check account online\n  kagnode account sync on|off      Choose profile synchronization\n  kagnode logout                   Revoke and clear credentials\n  kagnode demo install             Install all fictional examples\n  kagnode demo start|stop          Local browser examples\n  kagnode demo list|reset          Products or reset sample state\n  kagnode demo PRODUCT list|create NAME|delete ID|settings\n  kagnode demo ai prompt TEXT      Predefined sample response\n\nDemos work offline after first sign-in. No live infrastructure or billing.")
 		default:
 			err = errors.New("unknown command; run kagnode help")
 		}

@@ -100,6 +100,11 @@
   }
   function identity() {
     if (!current) return;
+    if (!window.KagNodeTheme?.session.authenticated && current.local_name)
+      window.KagNodeCore?.setSession({
+        authenticated: true,
+        subject: String(current.local_name),
+      });
     const profile = current.enabled ? current.profile : null;
     document.querySelectorAll("[data-kn-account-name]").forEach((node) => {
       const next =
