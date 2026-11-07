@@ -104,7 +104,11 @@ def fetch(url, maximum=2_000_000):
         url,
         headers={
             "User-Agent": "KagNode-Core-Manager/1",
-            "Accept": "application/octet-stream",
+            "Accept": (
+                "application/vnd.github+json"
+                if p.hostname == "api.github.com"
+                else "application/octet-stream"
+            ),
         },
     )
     with urllib.request.build_opener(TrustedRedirect()).open(
