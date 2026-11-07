@@ -1,5 +1,9 @@
 # 1.2.0-beta.1 — ecosystem preview
 
+## Core integration preview
+
+Shared local UI components, manual animated navigation, natural scrolling rails and icon account menus. Added separate appearance-only account connections and signed UI patch controls. Existing storage, native services and prior release records are retained.
+
 ## 1.2.0-beta.1 packaging.2
 
 - Follow the renamed kagnode-passwords repository for Passwords releases and updates.

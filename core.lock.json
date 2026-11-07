@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "application": "cli",
+  "repository": "every-lemon/kagnode-core",
+  "baseline": "1.0.0",
+  "adapter": "1.0.0",
+  "ui_api": 1,
+  "patch_range": "1.0.x",
+  "automatic_ui_patches": true,
+  "backend_updates": "reviewed",
+  "fallback_manifest_sha256": "15a7bd36baf2f128ddb6f275c4792570bcf58c4d71af983a6c9372f56a8bddbe",
+  "source_commit": "01e0d2044a2f22c96d84a7b7cda2c1a2dbec7cdc"
+}

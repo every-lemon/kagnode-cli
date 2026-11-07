@@ -26,6 +26,14 @@ func builtDemoAssets(source fs.FS) http.Handler {
 		allowed[name] = true
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if data, kind, ok := coreCachedAsset(r.URL.Path); ok && (r.Method == "GET" || r.Method == "HEAD") {
+			w.Header().Set("Content-Type", kind)
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			if r.Method != "HEAD" {
+				_, _ = w.Write(data)
+			}
+			return
+		}
 		if r.Method != "GET" && r.Method != "HEAD" {
 			w.Header().Set("Allow", "GET, HEAD")
 			http.Error(w, "Method not allowed", 405)
@@ -43,6 +51,9 @@ func builtDemoAssets(source fs.FS) http.Handler {
 		if err != nil {
 			http.NotFound(w, r)
 			return
+		}
+		if strings.HasSuffix(name, ".html") {
+			content = coreHTML(content)
 		}
 		if strings.HasPrefix(name, "/built/") && (strings.HasSuffix(name, ".css") || strings.HasSuffix(name, ".js")) {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")

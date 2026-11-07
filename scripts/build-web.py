@@ -9,9 +9,31 @@ source = root / "assets"
 built = source / "built"
 built.mkdir(exist_ok=True)
 manifest = {}
+import importlib.util
+
+spec = importlib.util.spec_from_file_location(
+    "core_sdk", root / "vendor/core-source/packages/python/sdk.py"
+)
+core = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(core)
+core.BUNDLE = json.loads((source / "core-bundle.json").read_text())
+# Retain only the current generated local fallback. Runtime releases are separate.
+for stale in source.glob("kn-core-*"):
+    if stale.name.removeprefix("kn-core-") not in core.BUNDLE["files"]:
+        stale.unlink()
+for name, item in core.BUNDLE["files"].items():
+    import base64
+
+    (source / ("kn-core-" + name)).write_bytes(base64.b64decode(item["data"]))
+
 with tempfile.TemporaryDirectory(prefix="kagnode-cli-web-") as scratch:
     for file in sorted(source.iterdir()):
         if file.suffix not in (".css", ".js"):
+            continue
+        if file.name.startswith("kn-core-"):
+            # Preserve signed Core bytes and hashes; do not minify them a second time.
+            (built / file.name).write_bytes(file.read_bytes())
+            manifest["/" + file.name] = "/built/" + file.name
             continue
         out = Path(scratch) / file.name
         subprocess.run(
@@ -34,9 +56,48 @@ with tempfile.TemporaryDirectory(prefix="kagnode-cli-web-") as scratch:
         name = file.stem + "." + hashlib.sha256(data).hexdigest()[:16] + file.suffix
         (built / name).write_bytes(data)
         manifest["/" + file.name] = "/built/" + name
+    for name in core.BUNDLE["files"]:
+        mapped = manifest.get("/kn-core-" + name, "/kn-core-" + name)
+        manifest["/kagnode-core/" + core.BUNDLE["version"] + "/" + name] = mapped
     for file in sorted(source.glob("*.html")):
-        text = file.read_text()
+        text = core.inject(file.read_text(), "cli")
+        if file.name.startswith("frame-"):
+            # Sandboxed fictional frames have an opaque origin and inline-only CSP.
+            # Embed Core at build time rather than granting the frame network access.
+            import base64, html
+
+            bundle = core.BUNDLE
+            entries = bundle["entrypoints"]
+            text = re.sub(
+                r'<script[^>]+src="/kagnode-core/[^"]+"[^>]*></script>', "", text
+            )
+            text = re.sub(r'<link[^>]+href="/kagnode-core/[^"]+"[^>]*>', "", text)
+            css = base64.b64decode(bundle["files"][entries["style"]]["data"]).decode()
+            js = (
+                base64.b64decode(bundle["files"][entries["theme"]]["data"]).decode()
+                + "\n"
+                + base64.b64decode(bundle["files"][entries["script"]]["data"]).decode()
+            )
+            mark = "data:image/svg+xml;base64," + bundle["files"]["mark.svg"]["data"]
+
+            def frame_config(match):
+                context = json.loads(html.unescape(match[1]))
+                context["mark"] = mark
+                return (
+                    '<meta name="kagnode-core" content="'
+                    + html.escape(json.dumps(context), quote=True)
+                    + '">'
+                )
+
+            text = re.sub(
+                r'<meta name="kagnode-core" content="([^"]*)">', frame_config, text
+            )
+            text = text.replace("</head>", "<style>" + css + "</style></head>").replace(
+                "</body>", "<script>" + js + "</script></body>"
+            )
         for old, new in manifest.items():
+            if old.startswith("/kagnode-core/"):
+                continue
             text = text.replace('"' + old + '"', '"' + new + '"')
 
         def inline(match):
