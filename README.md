@@ -8,11 +8,15 @@ Linux terminal and browser tools for KagNode account sign-in and explicitly fict
 
 ## Release status
 
-Product source: **1.1.0**. Packaging preview: **1.1.0-packaging.1**.
+Product source: **1.2.0-beta.1**. Packaging preview: **1.2.0-beta.1.packaging.1**.
 
 Packaging prereleases do not change the latest stable release or establish new hardware or service compatibility. See [verification](docs/VERIFICATION.md) and [changelog](CHANGELOG.md).
 
 ## Features
+
+- Keyboard-only application setup wizard and a shared installation root.
+- GitHub release checks, verified source installs and local admin-panel update manager.
+- Optional digest-pinned Vaultwarden engine setup for KagNode Passwords.
 
 - Browser-assisted account sign-in.
 - Interactive terminal interface and local browser examples.
@@ -71,6 +75,8 @@ python3 scripts/release.py --output dist/packages
 Install the formatting dependencies from `requirements-format.txt`. Package building additionally needs `dpkg-deb`, `rpmbuild`, XZ support and, for CLI binaries, Go. Read [the repository map](docs/STRUCTURE.md) before editing generated files.
 
 ## Documentation
+
+- [Ecosystem setup, update adapters and current limitations](docs/ECOSYSTEM.md)
 
 - [Repository structure](docs/STRUCTURE.md)
 - [Operations](docs/OPERATIONS.md)

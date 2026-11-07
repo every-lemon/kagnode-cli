@@ -1,0 +1,1562 @@
+#!/usr/bin/env python3
+"""KagNode's local installation and release manager. No shell execution.
+
+GitHub source releases are pinned by release ID and their published SHA-256.
+VPN native updates remain with its signed updater. Native provisioning is never
+an incidental side effect of downloading an application release.
+"""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import fcntl
+import hashlib
+import http.client
+import json
+import os
+from pathlib import Path, PurePosixPath
+import pwd
+import re
+import shutil
+import signal
+import socket
+import socketserver
+import stat
+import struct
+import subprocess
+import sys
+import tarfile
+import tempfile
+import threading
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+CATALOG = {
+    "passwords": {
+        "name": "KagNode Passwords",
+        "repo": "kagnode-authenticator",
+        "kind": "python",
+        "port": 8810,
+    },
+    "mail": {
+        "name": "KagNode Mail",
+        "repo": "kagnode-mail",
+        "kind": "native",
+        "port": 8811,
+    },
+    "vpn": {
+        "name": "KagNode VPN",
+        "repo": "kagnode-vpn",
+        "kind": "signed-native",
+        "port": 8812,
+    },
+    "httpboot": {
+        "name": "KagNode HTTP Boot",
+        "repo": "kagnode-httpboot",
+        "kind": "native",
+        "port": 8813,
+    },
+    "media": {
+        "name": "KagNode Media",
+        "repo": "kagnode-media",
+        "kind": "node",
+        "port": 8814,
+    },
+    "logos": {
+        "name": "KagNode Logos",
+        "repo": "kagnode-logos",
+        "kind": "static",
+        "port": 8815,
+    },
+    "cli": {
+        "name": "KagNode CLI",
+        "repo": "kagnode-cli",
+        "kind": "binary",
+        "port": None,
+    },
+}
+# Strictly code-only web updates. Core/schema/provisioning source must match.
+NATIVE_PROFILES = {
+    "vpn": {
+        "code": "/opt/kagnode/vpn",
+        "guards": ["release-key.pem", "VERSION"],
+        "payload": [],
+        "services": [],
+    },
+    "mail": {
+        "code": "/opt/kagnode/mail",
+        "guards": ["kagnode/db.py", "kagnode/guard.py"],
+        "payload": ["kagnode"],
+        "services": ["kagnode-web.service", "kagnode-guard.service"],
+    },
+    "httpboot": {
+        "code": "/opt/kagnode/httpboot/source",
+        "guards": [
+            "httpboot/server_v2.py",
+            "httpboot/persistence_v2.py",
+            "httpboot/snapshot_store.py",
+            "httpboot/client_updates.py",
+        ],
+        "payload": [
+            "httpboot/server_console.py",
+            "httpboot/server_web.py",
+            "httpboot/server_web_assets.py",
+            "httpboot/account_sync.py",
+            "httpboot/ecosystem_updates.py",
+        ],
+        "services": ["kagnode-httpboot-web.service"],
+    },
+}
+
+LIMIT = 512 * 1024 * 1024
+
+
+class ManagerError(Exception):
+    pass
+
+
+def atomic(path, value, mode=0o600):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd, temporary = tempfile.mkstemp(prefix=".write-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w") as stream:
+            os.fchmod(stream.fileno(), mode)
+            stream.write(json.dumps(value, indent=2) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def read(path, default=None):
+    try:
+        return json.loads(Path(path).read_text())
+    except FileNotFoundError:
+        return default
+
+
+def https_url(url, repo=None):
+    parsed = urllib.parse.urlsplit(url)
+    if (
+        parsed.scheme != "https"
+        or parsed.username
+        or parsed.password
+        or parsed.fragment
+    ):
+        raise ManagerError("Release downloads must use HTTPS without credentials.")
+    allowed = {
+        "api.github.com",
+        "github.com",
+        "release-assets.githubusercontent.com",
+        "objects.githubusercontent.com",
+    }
+    if parsed.hostname not in allowed or parsed.port not in (None, 443):
+        raise ManagerError("Release host is not in the GitHub allowlist.")
+    if repo and (
+        parsed.hostname != "github.com"
+        or not parsed.path.startswith(f"/every-lemon/{repo}/releases/download/")
+    ):
+        raise ManagerError("Release asset belongs to a different repository.")
+    return url
+
+
+class Redirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        https_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def request(url, limit=2_000_000):
+    https_url(url)
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "KagNode-CLI-Ecosystem",
+            "Accept": "application/vnd.github+json",
+        },
+    )
+    try:
+        with urllib.request.build_opener(Redirects()).open(req, timeout=30) as response:
+            data = response.read(limit + 1)
+            if len(data) > limit:
+                raise ManagerError("GitHub response exceeds the size limit.")
+            return data
+    except urllib.error.HTTPError as error:
+        if error.code in (403, 429):
+            raise ManagerError(
+                "GitHub rate limit or permission error. Wait before checking again."
+            ) from error
+        raise ManagerError(f"GitHub returned HTTP {error.code}.") from error
+
+
+def source_archive(archive, destination):
+    """Reject paths/links/devices/duplicates before extracting any member."""
+    with tarfile.open(archive, "r:gz") as bundle:
+        members, names, total, top = [], set(), 0, None
+        for member in bundle:
+            path = PurePosixPath(member.name)
+            if (
+                path.is_absolute()
+                or ".." in path.parts
+                or "\\" in member.name
+                or not path.parts
+                or any(ord(c) < 32 for c in member.name)
+            ):
+                raise ManagerError("Unsafe archive path.")
+            if not (member.isfile() or member.isdir()) or member.name in names:
+                raise ManagerError(
+                    "Archive contains links, special files, or duplicate paths."
+                )
+            names.add(member.name)
+            top = top or path.parts[0]
+            if top != path.parts[0]:
+                raise ManagerError("Archive must have a single top-level directory.")
+            total += member.size
+            if total > LIMIT * 2 or len(names) > 25000:
+                raise ManagerError("Expanded archive exceeds installation limits.")
+            if len(path.parts) > 1:
+                members.append((member, Path(*path.parts[1:])))
+        for member, rel in members:
+            target = destination / rel
+            target.parent.mkdir(parents=True, exist_ok=True, mode=0o755)
+            if member.isdir():
+                target.mkdir(exist_ok=True, mode=0o755)
+            else:
+                with bundle.extractfile(member) as source, target.open("xb") as dest:
+                    shutil.copyfileobj(source, dest)
+                target.chmod(0o755 if member.mode & 0o111 else 0o644)
+        for directory, _, _ in os.walk(destination):
+            Path(directory).chmod(0o755)
+
+
+def validate_root(root, privileged=False):
+    path = Path(root)
+    if (
+        not path.is_absolute()
+        or str(path) != os.path.normpath(str(path))
+        or len(path.parts) < 3
+        or not re.fullmatch(r"/[A-Za-z0-9_./-]+", str(path))
+    ):
+        raise ManagerError("Use an absolute dedicated root such as /srv/kagnode.")
+    for parent in [path, *path.parents]:
+        if parent.is_symlink():
+            raise ManagerError("The installation root must not pass through symlinks.")
+        if (
+            parent.exists()
+            and privileged
+            and (parent.stat().st_uid != 0 or parent.stat().st_mode & 0o022)
+        ):
+            raise ManagerError(
+                "Installation root and ancestors must be root-owned and not group/world writable."
+            )
+    return path
+
+
+class Manager:
+    def __init__(self, root, require_root=True):
+        self.root = validate_root(root, require_root)
+        self.require_root = require_root
+
+    def project(self, name):
+        if name == "authenticator":
+            name = "passwords"
+        if name not in CATALOG:
+            raise ManagerError("Unknown application. Use apps list.")
+        path = self.root / name
+        if path.is_symlink():
+            raise ManagerError("Application directory must not be a symlink.")
+        if (
+            self.require_root
+            and path.exists()
+            and (path.stat().st_uid != 0 or path.stat().st_mode & 0o022)
+        ):
+            raise ManagerError(
+                "Application root must be owned by root and not writable by application accounts."
+            )
+        for child in (
+            "state.json",
+            "candidate.json",
+            "operation.json",
+            ".lock",
+            "config",
+            "releases",
+            "downloads",
+            "backups",
+        ):
+            target = path / child
+            if target.is_symlink():
+                raise ManagerError("Managed paths cannot be symlinks: " + child)
+
+        return name, path
+
+    @contextlib.contextmanager
+    def lock(self, name):
+        if self.require_root and os.geteuid() != 0:
+            raise ManagerError(
+                "Run installation changes with sudo; checking releases does not need sudo."
+            )
+        name, path = self.project(name)
+        self.root.mkdir(parents=True, exist_ok=True, mode=0o755)
+        path.mkdir(exist_ok=True, mode=0o755)
+        self.root.chmod(0o755)
+        path.chmod(0o755)
+        with (path / ".lock").open("a") as stream:
+            try:
+                fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise ManagerError(
+                    "Another operation is already running for this application."
+                )
+            yield path
+
+    def status(self, name):
+        name, path = self.project(name)
+        try:
+            state = read(path / "state.json", {})
+        except PermissionError:
+            return {
+                "id": name,
+                **CATALOG[name],
+                "root": str(path),
+                "message": "Use sudo to inspect this installation's private status.",
+                "can_apply": False,
+            }
+        return {
+            "id": name,
+            **CATALOG[name],
+            "root": str(path),
+            "installed": state.get("version"),
+            "active": state.get("active", False),
+            "channel": state.get("channel", "stable"),
+            "operation": read(path / "operation.json", {}),
+            "candidate": read(path / "candidate.json", None),
+            "adapter": state.get("adapter", "managed"),
+            "can_apply": CATALOG[name]["kind"] not in ("native", "signed-native")
+            or bool(state.get("native_binding")),
+        }
+
+    def check(self, name, channel=None):
+        name, path = self.project(name)
+        try:
+            state = read(path / "state.json", {})
+        except PermissionError:
+            raise ManagerError(
+                "Use sudo to check releases for this managed installation."
+            )
+        channel = channel or state.get("channel", "stable")
+        if channel not in ("stable", "preview"):
+            raise ManagerError("Choose stable or preview.")
+        repo = CATALOG[name]["repo"]
+        if name == "vpn" and state.get("native_binding"):
+            return self.check_vpn(path, channel)
+        releases = json.loads(
+            request(
+                f"https://api.github.com/repos/every-lemon/{repo}/releases?per_page=50"
+            )
+        )
+        if not isinstance(releases, list):
+            raise ManagerError("Invalid GitHub release listing.")
+        candidate = None
+        for release in releases:
+            if release.get("draft") or (
+                release.get("prerelease") and channel != "preview"
+            ):
+                continue
+            assets = {a["name"]: a for a in release.get("assets", [])}
+            if "release-manifest.json" not in assets:
+                continue
+            manifest_asset = assets["release-manifest.json"]
+            manifest = json.loads(
+                request(https_url(manifest_asset["browser_download_url"], repo))
+            )
+            if (
+                manifest.get("schema") != 1
+                or manifest.get("repository") != f"every-lemon/{repo}"
+                or not re.fullmatch(r"[a-f0-9]{40}", manifest.get("source_commit", ""))
+            ):
+                raise ManagerError("Release manifest identity is invalid.")
+            matches = [
+                n
+                for n in manifest.get("assets", {})
+                if n.startswith(repo + "_") and n.endswith("_source.tar.gz")
+            ]
+            if name == "logos":
+                matches = [
+                    n
+                    for n in manifest.get("assets", {})
+                    if n.startswith(repo + "_")
+                    and n.endswith(("_source.tar.gz", "_artwork.tar.gz"))
+                ]
+            if len(matches) != 1:
+                continue
+            asset_name = matches[0]
+            asset = manifest["assets"][asset_name]
+            if (
+                asset_name not in assets
+                or not re.fullmatch(r"[a-f0-9]{64}", asset.get("sha256", ""))
+                or type(asset.get("size")) is not int
+                or not 0 < asset["size"] <= LIMIT
+            ):
+                raise ManagerError("Invalid source asset checksum or size.")
+            candidate = {
+                "repository": manifest["repository"],
+                "release_id": release["id"],
+                "tag": release["tag_name"],
+                "version": manifest["version"],
+                "source_commit": manifest["source_commit"],
+                "channel": channel,
+                "prerelease": release["prerelease"],
+                "checked": int(time.time()),
+                "url": https_url(assets[asset_name]["browser_download_url"], repo),
+                "sha256": asset["sha256"],
+                "size": asset["size"],
+                "changed": state.get("source_commit") != manifest["source_commit"],
+            }
+            break
+        if path.exists() and os.access(path, os.W_OK):
+            atomic(path / "candidate.json", candidate)
+        return candidate or {
+            "available": False,
+            "channel": channel,
+            "message": "No compatible release in this channel. Preview releases require an explicit preview selection.",
+        }
+
+    def operation(self, path, phase, message, **extra):
+        value = {
+            "phase": phase,
+            "message": message,
+            "updated": int(time.time()),
+            **extra,
+        }
+        atomic(path / "operation.json", value)
+        print(json.dumps(value), flush=True)
+
+    def install(self, name, channel="stable", release_id=None):
+        name, path = self.project(name)
+        with self.lock(name):
+            candidate = self.check(name, channel)
+            if not candidate.get("release_id"):
+                raise ManagerError(candidate["message"])
+            if release_id is not None and candidate["release_id"] != release_id:
+                raise ManagerError(
+                    "The release changed since review. Check again before installing."
+                )
+            existing = read(path / "state.json", {})
+            if existing.get("needs_recovery"):
+                raise ManagerError(
+                    "This installation needs recovery review before another update. Inspect operation.json and the retained backup."
+                )
+            if name == "vpn" and existing.get("native_binding"):
+                return self.update_vpn(path, candidate, existing)
+            if existing.get("source_commit") == candidate["source_commit"]:
+                return {"message": "Already installed", **self.status(name)}
+            if (
+                existing.get("active")
+                and not existing.get("native_binding")
+                and CATALOG[name]["kind"]
+                in (
+                    "native",
+                    "signed-native",
+                )
+            ):
+                raise ManagerError(
+                    "Native service updates must use their verified native adapter."
+                )
+            if (path / "data").is_symlink() or (path / "logs").is_symlink():
+                raise ManagerError(
+                    "Application data must remain within its managed directory."
+                )
+            for folder in (
+                "releases",
+                "config",
+                "data",
+                "logs",
+                "backups",
+                "downloads",
+            ):
+                (path / folder).mkdir(
+                    mode=0o700 if folder in ("config", "data", "backups") else 0o755,
+                    exist_ok=True,
+                )
+                if folder in ("releases", "downloads"):
+                    (path / folder).chmod(0o755)
+            if shutil.disk_usage(path).free < candidate["size"] * 4 + 1024**3:
+                raise ManagerError(
+                    "Not enough free space for this release and its rollback copy."
+                )
+            release = (
+                path
+                / "releases"
+                / (candidate["source_commit"] + "-" + os.urandom(4).hex())
+            )
+            download = path / "downloads" / (candidate["sha256"] + ".tar.gz")
+            try:
+                self.operation(
+                    path, "downloading", "Downloading the reviewed GitHub release"
+                )
+                data = request(candidate["url"], LIMIT)
+                if (
+                    len(data) != candidate["size"]
+                    or hashlib.sha256(data).hexdigest() != candidate["sha256"]
+                ):
+                    raise ManagerError("Source download failed SHA-256 verification.")
+                download.write_bytes(data)
+                del data
+                if release.exists():
+                    raise ManagerError(
+                        "A previous staging directory exists; inspect it before retrying."
+                    )
+                release.mkdir(mode=0o755)
+                source_archive(download, release)
+                self.operation(
+                    path,
+                    "preparing",
+                    "Preparing the application in its own release directory",
+                )
+                self.prepare(name, path, release)
+                if existing.get("native_binding"):
+                    self.apply_native(name, path, release, existing)
+                    atomic(
+                        path / "state.json",
+                        {
+                            **existing,
+                            **candidate,
+                            "active": True,
+                            "installed_at": int(time.time()),
+                        },
+                    )
+                    self.operation(
+                        path,
+                        "complete",
+                        "Compatible native web application updated; system configuration retained",
+                    )
+                    return self.status(name)
+                old = (
+                    (path / "current").resolve()
+                    if (path / "current").is_symlink()
+                    else None
+                )
+                if (path / "current").exists() and old is None:
+                    raise ManagerError(
+                        "Existing current directory is not managed. Nothing was replaced."
+                    )
+                active = existing.get("active", False)
+                activated = False
+                if active:
+                    self.service(name, "stop")
+                try:
+                    self.backup(path)
+                    target = path / ".current-next"
+                    target.unlink(missing_ok=True)
+                    target.symlink_to(release.relative_to(path))
+                    os.replace(target, path / "current")
+                    activated = True
+                    atomic(
+                        path / "state.json",
+                        {
+                            **existing,
+                            **candidate,
+                            "active": active,
+                            "previous": str(old) if old else None,
+                            "installed_at": int(time.time()),
+                        },
+                    )
+                    if active:
+                        self.service(name, "start")
+                        self.healthy(name)
+                except Exception:
+                    # Never restore a database automatically after a new version may
+                    # have accepted writes. Keep both data backup and new release.
+                    if active:
+                        self.service(name, "stop", check=False)
+                        if not activated:
+                            # A failed backup cannot have changed code or data.
+                            self.service(name, "start")
+                        else:
+                            atomic(
+                                path / "state.json",
+                                {
+                                    **read(path / "state.json", {}),
+                                    "active": False,
+                                    "needs_recovery": True,
+                                },
+                            )
+                    raise
+                self.operation(
+                    path,
+                    "complete",
+                    "Release installed"
+                    + (
+                        " and service is running"
+                        if active
+                        else "; setup is available in the CLI"
+                    ),
+                )
+                return self.status(name)
+            except Exception as error:
+                self.operation(
+                    path,
+                    "failed",
+                    str(error),
+                    recovery="Previous release and pre-update data backup are retained. No database was automatically restored.",
+                )
+                raise
+
+    def native_root(self, name):
+        path = Path(NATIVE_PROFILES[name]["code"])
+        if path.is_symlink():
+            expected = self.root / name / "runtime"
+            if path.resolve() != expected.resolve() or expected.is_symlink():
+                raise ManagerError(
+                    "Native compatibility link points outside this application's managed runtime."
+                )
+            path = expected
+        return validate_root(path, True)
+
+    def check_vpn(self, path, channel):
+        profile = NATIVE_PROFILES["vpn"]
+        native = self.native_root("vpn")
+        current = (native / "VERSION").read_text().strip()
+        releases = json.loads(
+            request(
+                "https://api.github.com/repos/every-lemon/kagnode-vpn/releases?per_page=100"
+            )
+        )
+
+        def version(value):
+            match = re.fullmatch(
+                r"v?(\d+)\.(\d+)\.(\d+)(?:-(alpha|beta|rc)\.(\d+))?", value
+            )
+            if not match:
+                raise ManagerError("Invalid native VPN release version.")
+            return (
+                *map(int, match.group(1, 2, 3)),
+                {"alpha": 0, "beta": 1, "rc": 2, None: 3}[match[4]],
+                int(match[5] or 0),
+            )
+
+        choices = []
+        for release in releases:
+            if (
+                release.get("draft")
+                or (release.get("prerelease") and channel != "preview")
+                or not re.fullmatch(
+                    r"v\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?",
+                    release.get("tag_name", ""),
+                )
+            ):
+                continue
+            assets = {
+                a["name"]: a["browser_download_url"] for a in release.get("assets", [])
+            }
+            if all(
+                name in assets
+                for name in ("manifest.json", "manifest.sig", "update.sh")
+            ):
+                choices.append((version(release["tag_name"]), release, assets))
+        if not choices:
+            raise ManagerError("No signed VPN release is available in this channel.")
+        _, release, assets = max(choices, key=lambda value: value[0])
+        manifest = request(https_url(assets["manifest.json"], "kagnode-vpn"), 65536)
+        signature = request(https_url(assets["manifest.sig"], "kagnode-vpn"), 4096)
+        with tempfile.TemporaryDirectory(prefix="vpn-verify-") as scratch:
+            scratch = Path(scratch)
+            (scratch / "manifest").write_bytes(manifest)
+            (scratch / "signature").write_bytes(signature)
+            subprocess.run(
+                [
+                    "openssl",
+                    "pkeyutl",
+                    "-verify",
+                    "-pubin",
+                    "-inkey",
+                    str(native / "release-key.pem"),
+                    "-rawin",
+                    "-in",
+                    str(scratch / "manifest"),
+                    "-sigfile",
+                    str(scratch / "signature"),
+                ],
+                check=True,
+                capture_output=True,
+                timeout=15,
+            )
+        content = json.loads(manifest)
+        asset = content.get("assets", {}).get("update.sh", {})
+        if (
+            content.get("schema") != 1
+            or content.get("version") != release["tag_name"][1:]
+            or content.get("platform") != "ubuntu-24.04-amd64"
+            or not re.fullmatch(r"[a-f0-9]{64}", asset.get("sha256", ""))
+            or type(asset.get("size")) is not int
+            or not 0 < asset["size"] < 8 * 1024**2
+        ):
+            raise ManagerError("Signed VPN release metadata is invalid.")
+        candidate = {
+            "release_id": release["id"],
+            "version": content["version"],
+            "tag": release["tag_name"],
+            "channel": channel,
+            "prerelease": release["prerelease"],
+            "sha256": asset["sha256"],
+            "size": asset["size"],
+            "url": https_url(assets["update.sh"], "kagnode-vpn"),
+            "signature": "verified",
+            "changed": version(content["version"]) > version(current),
+            "checked": int(time.time()),
+        }
+        atomic(path / "candidate.json", candidate)
+        return candidate
+
+    def update_vpn(self, path, candidate, state):
+        if not candidate.get("changed"):
+            return {
+                "message": "VPN is already at this release or newer.",
+                **self.status("vpn"),
+            }
+        self.operation(path, "downloading", "Downloading signed VPN update")
+        data = request(candidate["url"], 8 * 1024**2)
+        if (
+            len(data) != candidate["size"]
+            or hashlib.sha256(data).hexdigest() != candidate["sha256"]
+        ):
+            raise ManagerError("Signed VPN payload failed checksum verification.")
+        download = path / "downloads"
+        download.mkdir(mode=0o700, exist_ok=True)
+        script = download / (candidate["sha256"] + ".sh")
+        script.write_bytes(data)
+        script.chmod(0o600)
+        self.operation(path, "preparing", "Applying the verified native VPN updater")
+        log = path / "native-update.log"
+        with log.open("a") as output:
+            os.chmod(log, 0o600)
+            subprocess.run(
+                ["/bin/bash", str(script)]
+                + (["--prerelease"] if candidate["prerelease"] else []),
+                stdin=subprocess.DEVNULL,
+                stdout=output,
+                stderr=output,
+                check=True,
+                timeout=1800,
+            )
+        actual = (Path(NATIVE_PROFILES["vpn"]["code"]) / "VERSION").read_text().strip()
+        if actual != candidate["version"]:
+            raise ManagerError(
+                "The native updater did not report the expected installed version."
+            )
+        atomic(
+            path / "state.json",
+            {**state, "version": actual, "channel": candidate["channel"]},
+        )
+        self.operation(path, "complete", "Signed VPN update completed")
+        return self.status("vpn")
+
+    def bind_native(self, name, channel="stable"):
+        """Bind known existing installations; do not relocate private data."""
+        if name not in NATIVE_PROFILES:
+            raise ManagerError("This application has no native web update adapter.")
+        profile = NATIVE_PROFILES[name]
+        with self.lock(name) as path:
+            current = read(path / "state.json", {})
+            if current.get("native_binding"):
+                raise ManagerError("Native installation already bound.")
+            native = self.native_root(name)
+            if not native.is_dir() or any(
+                not (native / field).is_file() for field in profile["guards"]
+            ):
+                raise ManagerError(
+                    "The expected native installation was not found. No code or data was changed."
+                )
+            guards = {
+                field: hashlib.sha256((native / field).read_bytes()).hexdigest()
+                for field in profile["guards"]
+            }
+            atomic(
+                path / "state.json",
+                {
+                    "version": "existing-native",
+                    "channel": channel,
+                    "active": True,
+                    "native_binding": {"profile": name, "guards": guards},
+                    "adapter": "native-web",
+                },
+            )
+            return self.status(name)
+
+    def apply_native(self, name, path, release, state):
+        profile = NATIVE_PROFILES.get(name)
+        binding = state.get("native_binding", {})
+        if not profile or binding.get("profile") != name:
+            raise ManagerError("Unrecognized native update binding.")
+        native = self.native_root(name)
+        for field, digest in binding["guards"].items():
+            if (
+                not (native / field).is_file()
+                or not (release / field).is_file()
+                or hashlib.sha256((native / field).read_bytes()).hexdigest() != digest
+                or hashlib.sha256((release / field).read_bytes()).hexdigest() != digest
+            ):
+                raise ManagerError(
+                    "Native schema/provisioning guard changed: "
+                    + field
+                    + ". A reviewed migration is required."
+                )
+        backup = (
+            path
+            / "backups"
+            / ("native-" + time.strftime("%Y%m%dT%H%M%S") + "-" + os.urandom(3).hex())
+        )
+        backup.mkdir(parents=True, mode=0o700)
+        active = [
+            unit
+            for unit in profile["services"]
+            if subprocess.run(
+                ["systemctl", "is-active", "--quiet", unit], check=False
+            ).returncode
+            == 0
+        ]
+        changed = []
+        try:
+            for unit in active:
+                subprocess.run(["systemctl", "stop", unit], check=True, timeout=60)
+            for relative in profile["payload"]:
+                source, target = release / relative, native / relative
+                if not source.exists():
+                    raise ManagerError("Native release payload missing: " + relative)
+                if target.is_symlink():
+                    raise ManagerError(
+                        "Native payload path is a symlink; review its layout first."
+                    )
+                saved = backup / relative
+                saved.parent.mkdir(parents=True, exist_ok=True)
+                if target.is_dir():
+                    shutil.copytree(target, saved, symlinks=True)
+                elif target.exists():
+                    shutil.copy2(target, saved)
+                staging = target.with_name(target.name + ".kagnode-next")
+                if staging.exists() or staging.is_symlink():
+                    raise ManagerError("A previous native staging path needs review.")
+                if source.is_dir():
+                    shutil.copytree(source, staging)
+                else:
+                    shutil.copy2(source, staging)
+                old = target.with_name(target.name + ".kagnode-old")
+                if old.exists() or old.is_symlink():
+                    raise ManagerError("A retained native rollback path needs review.")
+                if target.exists():
+                    target.rename(old)
+                changed.append((target, old, staging))
+                staging.rename(target)
+            for unit in active:
+                subprocess.run(["systemctl", "start", unit], check=True, timeout=60)
+                subprocess.run(["systemctl", "is-active", "--quiet", unit], check=True)
+            # Only obsolete code copies are removed; the verified backup stays.
+            for target, old, staging in changed:
+                if old.is_dir():
+                    shutil.rmtree(old)
+                else:
+                    old.unlink(missing_ok=True)
+        except Exception:
+            for unit in active:
+                subprocess.run(["systemctl", "stop", unit], check=False, timeout=60)
+            for target, old, staging in reversed(changed):
+                if target.exists():
+                    failed = target.with_name(
+                        target.name + ".kagnode-failed-" + os.urandom(3).hex()
+                    )
+                    target.rename(failed)
+                if old.exists():
+                    old.rename(target)
+            for unit in active:
+                subprocess.run(["systemctl", "start", unit], check=False, timeout=60)
+            raise
+
+    def user(self, name):
+        username = "kn-" + name
+        try:
+            return pwd.getpwnam(username)
+        except KeyError:
+            subprocess.run(
+                [
+                    "/usr/sbin/useradd",
+                    "--system",
+                    "--no-create-home",
+                    "--home-dir",
+                    str(self.root / name),
+                    "--shell",
+                    "/usr/sbin/nologin",
+                    username,
+                ],
+                check=True,
+            )
+            return pwd.getpwnam(username)
+
+    def prepare(self, name, path, release):
+        kind = CATALOG[name]["kind"]
+        if kind not in ("python", "node", "binary"):
+            return
+        user = self.user(name)
+        for base, directories, files in os.walk(release):
+            os.chown(base, user.pw_uid, user.pw_gid)
+            for filename in files:
+                os.chown(Path(base) / filename, user.pw_uid, user.pw_gid)
+        env = {
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "HOME": str(release),
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "npm_config_cache": str(path / "downloads" / "npm"),
+        }
+
+        def run(args):
+            subprocess.run(
+                args,
+                cwd=release,
+                env=env,
+                user=user.pw_uid,
+                group=user.pw_gid,
+                extra_groups=[],
+                check=True,
+                timeout=900,
+                stdin=subprocess.DEVNULL,
+            )
+
+        try:
+            if kind == "python":
+                run([sys.executable, "-m", "venv", str(release / ".venv")])
+                run(
+                    [
+                        str(release / ".venv/bin/pip"),
+                        "install",
+                        "--disable-pip-version-check",
+                        "-r",
+                        "requirements.txt",
+                    ]
+                )
+            elif kind == "node":
+                node = shutil.which("node")
+                if not node or not subprocess.check_output(
+                    [node, "--version"], text=True
+                ).startswith("v24."):
+                    raise ManagerError(
+                        "Node.js 24 is required. Install it before configuring Media."
+                    )
+                cache = path / "downloads/npm"
+                cache.mkdir(exist_ok=True)
+                os.chown(cache, user.pw_uid, user.pw_gid)
+                run([shutil.which("npm") or "/usr/bin/npm", "ci", "--ignore-scripts"])
+                run([shutil.which("npm") or "/usr/bin/npm", "run", "build"])
+            else:
+                go = shutil.which("go")
+                if not go:
+                    raise ManagerError(
+                        "Go is required for this source installation; prebuilt CLI downloads are also available."
+                    )
+                run([go, "build", "-trimpath", "-o", "kagnode", "."])
+        finally:
+            # Application code becomes immutable to the runtime account.
+            for base, directories, files in os.walk(release):
+                os.chown(base, 0, 0)
+                os.chmod(base, 0o755)
+                for filename in files:
+                    target = Path(base) / filename
+                    if not target.is_symlink():
+                        os.chown(target, 0, 0)
+                        target.chmod(0o755 if target.stat().st_mode & 0o111 else 0o644)
+
+    def backup(self, path):
+        size = sum(
+            file.stat().st_size
+            for folder in ("data", "config")
+            for file in (path / folder).rglob("*")
+            if file.is_file() and not file.is_symlink()
+        )
+        if shutil.disk_usage(path).free < size + 512 * 1024**2:
+            raise ManagerError(
+                "Not enough free space for a complete pre-update data backup."
+            )
+        if not any((path / "data").iterdir()) and not any((path / "config").iterdir()):
+            return
+        target = (
+            path
+            / "backups"
+            / (time.strftime("%Y%m%dT%H%M%S") + "-" + os.urandom(3).hex())
+        )
+        target.mkdir(mode=0o700)
+        for folder in ("data", "config"):
+            shutil.copytree(path / folder, target / folder, symlinks=True)
+        atomic(target / "state.json", read(path / "state.json", {}))
+
+    def service(self, name, action, check=True):
+        units = ["kagnode-" + name + ".service"]
+        worker = Path("/etc/systemd/system/kagnode-media-worker.service")
+        if name == "media" and worker.exists():
+            if action == "stop":
+                units.insert(0, worker.name)
+            else:
+                units.append(worker.name)
+        for unit in units:
+            subprocess.run(["systemctl", action, unit], check=check, timeout=60)
+
+    def healthy(self, name):
+        port = read(self.root / name / "state.json", {}).get(
+            "port", CATALOG[name]["port"]
+        )
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            connection = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
+            try:
+                connection.request("GET", "/healthz" if name == "media" else "/")
+                response = connection.getresponse()
+                if 200 <= response.status < 400:
+                    return
+            except (OSError, http.client.HTTPException):
+                pass
+            finally:
+                connection.close()
+            time.sleep(1)
+        raise ManagerError(
+            "Service did not return a healthy HTTP response. Inspect its journal; backup retained."
+        )
+
+    def setup(self, name, origin, port=None):
+        name, path = self.project(name)
+        parsed = urllib.parse.urlsplit(origin)
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.path not in ("", "/")
+            or parsed.query
+            or parsed.fragment
+            or parsed.username
+            or not re.fullmatch(r"https://[A-Za-z0-9.-]+(?::[0-9]+)?/?", origin)
+        ):
+            raise ManagerError(
+                "Use an HTTPS origin without a path, credentials, or query."
+            )
+        with self.lock(name):
+            state = read(path / "state.json", {})
+            if not state.get("version"):
+                raise ManagerError("Install a release before setup.")
+            if state.get("active"):
+                raise ManagerError(
+                    "Already configured. Edit the existing config deliberately; setup will not overwrite it."
+                )
+            kind = CATALOG[name]["kind"]
+            if kind not in ("python", "node", "static"):
+                raise ManagerError(
+                    "Native provisioning uses the project's installer with explicit network, storage and account settings. Downloaded source is in current/; no native services were changed."
+                )
+            port = port or CATALOG[name]["port"]
+            if not 1024 <= port <= 65535:
+                raise ManagerError("Choose an unprivileged port from 1024 to 65535.")
+            with socket.socket() as probe:
+                probe.bind(("127.0.0.1", port))
+            unit = Path(f"/etc/systemd/system/kagnode-{name}.service")
+            worker = Path("/etc/systemd/system/kagnode-media-worker.service")
+            environment = path / "config/service.env"
+            if (
+                unit.exists()
+                or environment.exists()
+                or (name == "media" and worker.exists())
+            ):
+                raise ManagerError(
+                    "Existing service configuration retained. Review it before retrying setup."
+                )
+            user = self.user(name)
+            for folder in ("data", "logs"):
+                os.chown(path / folder, user.pw_uid, user.pw_gid)
+            env = {"KAGNODE_ECOSYSTEM_ROOT": str(self.root), "KAGNODE_APP_ID": name}
+            if name == "passwords":
+                command = f"{path}/current/.venv/bin/python -m authentactor"
+                env.update(
+                    AUTHENTACTOR_DATA=str(path / "data"),
+                    AUTHENTACTOR_HOST="127.0.0.1",
+                    AUTHENTACTOR_PORT=str(port),
+                    AUTHENTACTOR_TRUSTED_PROXY="127.0.0.1",
+                )
+            elif name == "media":
+                command = f"{shutil.which('node')} {path}/current/dist/server.js"
+                env.update(
+                    DATA_DIR=str(path / "data"),
+                    PUBLIC_URL=origin.rstrip("/"),
+                    HOST="127.0.0.1",
+                    PORT=str(port),
+                )
+            else:
+                command = f"{sys.executable} -m http.server {port} --bind 127.0.0.1 --directory {path}/current"
+            environment = path / "config/service.env"
+            environment.write_text(
+                "".join(f"{key}={value}\n" for key, value in env.items())
+            )
+            environment.chmod(0o600)
+            unit = Path(f"/etc/systemd/system/kagnode-{name}.service")
+            if unit.exists():
+                raise ManagerError(
+                    "An existing service has that identity; refusing to replace it."
+                )
+            unit.write_text(
+                f"[Unit]\nDescription={CATALOG[name]['name']}\nAfter=network-online.target\n[Service]\nUser={user.pw_name}\nGroup={user.pw_name}\nWorkingDirectory={path}/current\nEnvironmentFile={environment}\nExecStart={command}\nRestart=on-failure\nUMask=0077\nNoNewPrivileges=true\nPrivateTmp=true\nProtectSystem=strict\nProtectHome=true\nReadWritePaths={path}/data {path}/logs\n[Install]\nWantedBy=multi-user.target\n"
+            )
+            if name == "media":
+                worker = Path("/etc/systemd/system/kagnode-media-worker.service")
+                if worker.exists():
+                    raise ManagerError(
+                        "An existing Media worker service was retained. Review the service configuration."
+                    )
+                worker.write_text(
+                    unit.read_text()
+                    .replace(
+                        "Description=KagNode Media",
+                        "Description=KagNode Media processing worker",
+                    )
+                    .replace("dist/server.js", "dist/worker.js")
+                )
+            subprocess.run(["systemctl", "daemon-reload"], check=True)
+            atomic(
+                path / "state.json",
+                {**state, "port": port, "origin": origin, "active": False},
+            )
+            self.service(name, "enable")
+            try:
+                self.service(name, "start")
+                self.healthy(name)
+            except Exception:
+                self.service(name, "stop", check=False)
+                raise
+            atomic(
+                path / "state.json",
+                {**state, "port": port, "origin": origin, "active": True},
+            )
+            return self.status(name)
+
+
+def bitwarden_setup(root, origin, image, port=8816, apply=False):
+    """Pinned upstream engine, isolated data; no automatic legacy-vault conversion."""
+    root = validate_root(root, apply)
+    Manager(root, apply).project("passwords")
+    if apply and os.geteuid() != 0:
+        raise ManagerError("Use sudo for engine installation.")
+    if apply and (root / "passwords/bitwarden").exists():
+        raise ManagerError(
+            "Existing engine configuration retained. Use its documented backup/update workflow."
+        )
+    if not re.fullmatch(r"https://[a-zA-Z0-9.-]+(?::[0-9]+)?", origin):
+        raise ManagerError("Bitwarden server needs its own HTTPS origin.")
+    if image is None:
+        latest = json.loads(
+            request(
+                "https://api.github.com/repos/dani-garcia/vaultwarden/releases/latest"
+            )
+        )
+        tag = latest.get("tag_name", "")
+        if (
+            latest.get("draft")
+            or latest.get("prerelease")
+            or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", tag)
+        ):
+            raise ManagerError("No valid stable Vaultwarden release was found.")
+        if not apply:
+            return {
+                "directory": str(root / "passwords/bitwarden"),
+                "version": tag,
+                "message": "With --apply, pull the official stable image and pin its immutable digest. Existing vaults remain unchanged.",
+            }
+        subprocess.run(
+            ["docker", "pull", "vaultwarden/server:" + tag], check=True, timeout=600
+        )
+        digests = json.loads(
+            subprocess.check_output(
+                [
+                    "docker",
+                    "image",
+                    "inspect",
+                    "vaultwarden/server:" + tag,
+                    "--format",
+                    "{{json .RepoDigests}}",
+                ],
+                text=True,
+            )
+        )
+        image = next(
+            (
+                digest
+                for digest in digests
+                if re.fullmatch(r"vaultwarden/server@sha256:[a-f0-9]{64}", digest)
+            ),
+            "",
+        )
+    if not re.fullmatch(r"vaultwarden/server@sha256:[a-f0-9]{64}", image):
+        raise ManagerError(
+            "Pin the official vaultwarden/server image by SHA-256 digest, not latest."
+        )
+    if not 1024 <= port <= 65535:
+        raise ManagerError("Invalid port.")
+    base = root / "passwords" / "bitwarden"
+    compose = {
+        "services": {
+            "vaultwarden": {
+                "image": image,
+                "restart": "unless-stopped",
+                "ports": [f"127.0.0.1:{port}:80"],
+                "volumes": ["./data:/data"],
+                "environment": {
+                    "DOMAIN": origin,
+                    "SIGNUPS_ALLOWED": "false",
+                    "INVITATIONS_ALLOWED": "false",
+                    "SHOW_PASSWORD_HINT": "false",
+                },
+                "security_opt": ["no-new-privileges:true"],
+                "cap_drop": ["ALL"],
+                "logging": {
+                    "driver": "json-file",
+                    "options": {"max-size": "10m", "max-file": "3"},
+                },
+            }
+        }
+    }
+    if not apply:
+        return {
+            "directory": str(base),
+            "compose": compose,
+            "message": "Review with --apply to install. Configure admin invitation privately; registration is disabled.",
+        }
+    if os.geteuid() != 0:
+        raise ManagerError("Use sudo for engine installation.")
+    if base.exists():
+        raise ManagerError(
+            "Existing engine configuration retained. Use its documented backup/update workflow."
+        )
+    base.mkdir(parents=True, mode=0o700)
+    (base / "data").mkdir(mode=0o700)
+    import secrets
+
+    token = secrets.token_urlsafe(48)
+    secret_file = base / "admin.env"
+    secret_file.write_text("ADMIN_TOKEN=" + token + "\n")
+    secret_file.chmod(0o600)
+    compose["services"]["vaultwarden"]["env_file"] = ["./admin.env"]
+    atomic(base / "compose.json", compose)
+    subprocess.run(
+        ["docker", "compose", "-f", str(base / "compose.json"), "pull"],
+        check=True,
+        timeout=600,
+    )
+    subprocess.run(
+        ["docker", "compose", "-f", str(base / "compose.json"), "up", "-d"],
+        check=True,
+        timeout=120,
+    )
+    return {
+        "server": origin,
+        "proxy": f"http://127.0.0.1:{port}",
+        "directory": str(base),
+        "message": "Engine started. Configure HTTPS, open /admin using the private admin.env token, and invite accounts before client sign-in. Existing KagNode vault was not modified.",
+    }
+
+
+def enable_panel(manager, name, username):
+    name, path = manager.project(name)
+    with manager.lock(name):
+        account = pwd.getpwnam(username)
+        configured = read(manager.root / "manager.json", {"panels": {}})
+        configured["panels"][name] = {"uid": account.pw_uid, "gid": account.pw_gid}
+        atomic(manager.root / "manager.json", configured)
+    return {
+        "message": "Panel authorized. Start kagnode apps serve as root, or install its systemd service.",
+        "socket": str(manager.root / "run" / (name + ".sock")),
+        "application_user": username,
+    }
+
+
+def serve(manager, stop_event=None):
+    """One daemon owns the socket directory; graceful shutdown finishes writes."""
+    if os.geteuid() != 0:
+        raise ManagerError("The local update manager must run as root.")
+    manager.root.mkdir(parents=True, exist_ok=True, mode=0o755)
+    for field in ("manager.json", ".manager.lock"):
+        if (manager.root / field).is_symlink():
+            raise ManagerError("Unsafe manager configuration path.")
+    with (manager.root / ".manager.lock").open("a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise ManagerError("The update manager is already running.") from error
+        return serve_locked(manager, stop_event)
+
+
+def serve_locked(manager, stop_event=None):
+    from http.server import BaseHTTPRequestHandler
+
+    if os.geteuid() != 0:
+        raise ManagerError("The local update manager must run as root.")
+    config = read(manager.root / "manager.json", {"panels": {}})
+    run = manager.root / "run"
+    run.mkdir(mode=0o755, exist_ok=True)
+    if run.is_symlink() or run.stat().st_uid != 0 or run.stat().st_mode & 0o022:
+        raise ManagerError("Unsafe socket directory.")
+    run.chmod(0o755)
+    active = set()
+    jobs_lock = threading.Lock()
+    servers = []
+    workers = []
+    stop_event = stop_event or threading.Event()
+
+    def factory(project, account):
+        class Handler(BaseHTTPRequestHandler):
+            def setup(self):
+                self.request.settimeout(5)
+                super().setup()
+
+            def log_message(self, *args):
+                pass
+
+            def do_POST(self):
+                self.connection.settimeout(5)
+                status, value = 200, {}
+                try:
+                    _, uid, _ = struct.unpack(
+                        "3i",
+                        self.connection.getsockopt(
+                            socket.SOL_SOCKET, socket.SO_PEERCRED, 12
+                        ),
+                    )
+                    if uid not in (0, account["uid"]):
+                        raise ManagerError(
+                            "This process is not authorized for that application."
+                        )
+                    length = int(self.headers.get("Content-Length", "0"))
+                    if (
+                        self.path != "/"
+                        or self.headers.get("Transfer-Encoding")
+                        or not 0 < length <= 4096
+                    ):
+                        raise ManagerError("Invalid update request.")
+                    data = json.loads(self.rfile.read(length))
+                    if not isinstance(data, dict) or data.get("action") not in (
+                        "state",
+                        "check",
+                        "apply",
+                    ):
+                        raise ManagerError("Unknown update action.")
+                    if data["action"] == "state":
+                        value = {"enabled": True, **manager.status(project)}
+                    else:
+                        with jobs_lock:
+                            if active:
+                                raise ManagerError(
+                                    "An application update is running. Refresh its status before starting another."
+                                )
+                            if data["action"] == "check":
+                                value = {
+                                    "enabled": True,
+                                    "candidate": manager.check(project),
+                                }
+                            else:
+                                candidate = (
+                                    read(manager.root / project / "candidate.json", {})
+                                    or {}
+                                )
+                                if (
+                                    type(data.get("release_id")) is not int
+                                    or candidate.get("release_id") != data["release_id"]
+                                    or not candidate.get("changed")
+                                ):
+                                    raise ManagerError(
+                                        "Check for updates and review the current release first."
+                                    )
+                                state = read(manager.root / project / "state.json", {})
+                                if not state.get("version"):
+                                    raise ManagerError(
+                                        "Install this application through the CLI before enabling panel updates."
+                                    )
+                                if CATALOG[project]["kind"] in (
+                                    "native",
+                                    "signed-native",
+                                ) and not state.get("native_binding"):
+                                    raise ManagerError(
+                                        "Native updates require the project's verified updater. This panel can check releases; it will not bypass native validation."
+                                    )
+                                manager.operation(
+                                    manager.root / project,
+                                    "queued",
+                                    "Reviewed update queued",
+                                )
+                                active.add(project)
+
+                                def work():
+                                    try:
+                                        manager.install(
+                                            project,
+                                            candidate["channel"],
+                                            data["release_id"],
+                                        )
+                                    except Exception as error:
+                                        manager.operation(
+                                            manager.root / project, "failed", str(error)
+                                        )
+                                    finally:
+                                        with jobs_lock:
+                                            active.discard(project)
+
+                                worker = threading.Thread(target=work)
+                                workers.append(worker)
+                                worker.start()
+                                status, value = (
+                                    202,
+                                    {
+                                        "queued": True,
+                                        "message": "Update started. Keep this page open to follow progress.",
+                                    },
+                                )
+                except (ManagerError, OSError, ValueError, KeyError) as error:
+                    status, value = 400, {"error": str(error)}
+                encoded = json.dumps(value).encode()
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(encoded)))
+                self.end_headers()
+                self.wfile.write(encoded)
+
+        return Handler
+
+    class Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+        daemon_threads = True
+
+    handlers = {}
+    try:
+        for name, account in config.get("panels", {}).items():
+            manager.project(name)
+            if any(
+                type(account.get(field)) is not int or account[field] < 0
+                for field in ("uid", "gid")
+            ):
+                raise ManagerError("Invalid panel account configuration.")
+            previous = read(manager.root / name / "operation.json", {})
+            if previous.get("phase") in ("queued", "downloading", "preparing"):
+                manager.operation(
+                    manager.root / name,
+                    "interrupted",
+                    "The manager restarted during an operation. Review the retained release and backup before retrying.",
+                )
+            path = run / (name + ".sock")
+            if path.is_symlink() or (
+                path.exists() and not stat.S_ISSOCK(path.stat().st_mode)
+            ):
+                raise ManagerError("Unexpected file at the manager socket path.")
+            # The exclusive process lock proves no other manager owns this socket.
+            path.unlink(missing_ok=True)
+            server = Server(str(path), factory(name, account))
+            os.chown(path, 0, account["gid"])
+            path.chmod(0o660)
+            servers.append((server, path))
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+        if not servers:
+            raise ManagerError("Enable at least one application panel first.")
+        if threading.current_thread() is threading.main_thread():
+            for sig in (signal.SIGTERM, signal.SIGINT):
+                handlers[sig] = signal.getsignal(sig)
+                signal.signal(sig, lambda *_: stop_event.set())
+        print(
+            "KagNode update manager is listening on local application sockets.",
+            flush=True,
+        )
+        stop_event.wait()
+    finally:
+        for server, path in servers:
+            server.shutdown()
+            server.server_close()
+            path.unlink(missing_ok=True)
+        for worker in workers:
+            worker.join()
+        for sig, handler in handlers.items():
+            signal.signal(sig, handler)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--root", default=os.environ.get("KAGNODE_ROOT", "/srv/kagnode")
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("list")
+    sub.add_parser("serve")
+    migrate = sub.add_parser("consolidate")
+    migrate.add_argument("project", choices=["mail", "vpn", "httpboot"])
+    migrate.add_argument("--apply", action="store_true")
+    migrate.add_argument("--rollback", action="store_true")
+    native = sub.add_parser("bind-native")
+    native.add_argument("project", choices=list(NATIVE_PROFILES))
+    native.add_argument("--channel", choices=["stable", "preview"], default="stable")
+    panel = sub.add_parser("enable-panel")
+    panel.add_argument("project", choices=list(CATALOG))
+    panel.add_argument("--user", required=True)
+    for command in ("status", "check", "install", "update"):
+        p = sub.add_parser(command)
+        p.add_argument("project", choices=list(CATALOG) + ["authenticator"])
+        if command != "status":
+            p.add_argument("--channel", choices=["stable", "preview"], default="stable")
+        if command in ("install", "update"):
+            p.add_argument("--release-id", type=int)
+    p = sub.add_parser("setup")
+    p.add_argument("project", choices=list(CATALOG))
+    p.add_argument("--origin", required=True)
+    p.add_argument("--port", type=int)
+    p = sub.add_parser("bitwarden")
+    p.add_argument("--origin", required=True)
+    p.add_argument(
+        "--image",
+        help="Optional official image digest; without it, resolve the latest stable upstream image",
+    )
+    p.add_argument("--port", type=int, default=8816)
+    p.add_argument("--apply", action="store_true")
+    args = parser.parse_args()
+    manager = Manager(args.root, args.command not in ("list", "status", "check"))
+    if args.command == "list":
+        result = [manager.status(name) for name in CATALOG]
+    elif args.command == "consolidate":
+        command = [
+            sys.executable,
+            str(Path(__file__).with_name("consolidate.py")),
+            args.project,
+            "--destination",
+            str(manager.root),
+        ]
+        if args.apply:
+            command.append("--apply")
+        if args.rollback:
+            command.append("--rollback")
+        subprocess.run(command, check=True)
+        return
+    elif args.command == "bind-native":
+        result = manager.bind_native(args.project, args.channel)
+    elif args.command == "serve":
+        return serve(manager)
+    elif args.command == "enable-panel":
+        result = enable_panel(manager, args.project, args.user)
+    elif args.command == "status":
+        result = manager.status(args.project)
+    elif args.command == "check":
+        result = manager.check(args.project, args.channel)
+    elif args.command in ("install", "update"):
+        result = manager.install(args.project, args.channel, args.release_id)
+    elif args.command == "setup":
+        result = manager.setup(args.project, args.origin, args.port)
+    else:
+        result = bitwarden_setup(
+            args.root, args.origin, args.image, args.port, args.apply
+        )
+    print(json.dumps(result, indent=2))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (ManagerError, OSError, ValueError, subprocess.SubprocessError) as error:
+        print("KagNode: " + str(error), file=sys.stderr)
+        sys.exit(1)
