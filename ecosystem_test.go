@@ -1,11 +1,14 @@
 package main
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
 
 func TestSetupFramesRemainKeyboardOnlyAndFit(t *testing.T) {
+	t.Setenv("TERM", "xterm-256color")
+	ansi := regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
 	for _, size := range [][2]int{{24, 10}, {40, 12}, {80, 24}, {130, 40}} {
 		for selected := range setupProjects {
 			frame := setupFrame("Applications", setupProjects, selected, size[0], size[1])
@@ -13,12 +16,21 @@ func TestSetupFramesRemainKeyboardOnlyAndFit(t *testing.T) {
 				t.Fatal("mouse enabled")
 			}
 			for _, row := range strings.Split(frame, "\r\n") {
-				row = strings.NewReplacer("\x1b[H", "", "\x1b[2J", "", "\x1b[K", "").Replace(row)
+				row = ansi.ReplaceAllString(row, "")
 				if tuiWidth(row) > size[0] {
 					t.Fatalf("row overflow: %q", row)
 				}
 			}
 		}
+	}
+}
+
+func TestSetupRespectsNoColor(t *testing.T) {
+	t.Setenv("TERM", "xterm-256color")
+	t.Setenv("NO_COLOR", "1")
+	frame := setupFrame("Applications", setupProjects, 0, 80, 24)
+	if strings.Contains(frame, "38;5;") || strings.Contains(frame, "48;5;") {
+		t.Fatal("color enabled despite NO_COLOR")
 	}
 }
 

@@ -77,24 +77,36 @@ func setupFrame(title string, choices []setupChoice, selected, width, height int
 	width = max(16, width)
 	height = max(8, height)
 	var b strings.Builder
-	row := func(text string) { b.WriteString(tuiClip(text, width-2) + "\x1b[K\r\n") }
+	_, noColor := os.LookupEnv("NO_COLOR")
+	color := !noColor && os.Getenv("TERM") != "" && os.Getenv("TERM") != "dumb"
+	row := func(text, style string) {
+		text = tuiClip(text, width-2)
+		if color && style != "" {
+			b.WriteString("\x1b[" + style + "m" + text + "\x1b[0m")
+		} else {
+			b.WriteString(text)
+		}
+		b.WriteString("\x1b[K\r\n")
+	}
 	b.WriteString("\x1b[H\x1b[2J")
-	row("KagNode.  /  Setup")
-	row("")
-	row(title)
-	row("")
+	row("KagNode.  /  Setup", "1;38;5;75")
+	row("", "")
+	row(title, "1")
+	row("", "")
 	visible := max(1, (height-7)/2)
 	start := max(0, min(selected-visible/2, len(choices)-visible))
 	for i := start; i < min(len(choices), start+visible); i++ {
 		prefix := "  "
+		style := ""
 		if i == selected {
 			prefix = "› "
+			style = "1;38;5;75;48;5;236"
 		}
-		row(prefix + choices[i].name)
-		row("  " + choices[i].detail)
+		row(prefix+choices[i].name, style)
+		row("  "+choices[i].detail, "2")
 	}
-	row("")
-	row("↑/↓ choose · Enter continue · Esc back · Ctrl+C exit")
+	row(fmt.Sprintf("%d / %d", selected+1, len(choices)), "2")
+	row("↑/↓ choose · Enter continue · Esc back · Ctrl+C exit", "2")
 	return b.String()
 }
 
