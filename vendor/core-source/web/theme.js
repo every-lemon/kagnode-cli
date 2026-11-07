@@ -2,6 +2,7 @@
 (() => {
   if (window.KagNodeTheme) return;
   const root = document.documentElement;
+  root.classList.add("js");
   root.dataset.knCore = "1.0.0";
   const system = matchMedia("(prefers-color-scheme: dark)");
   let session = { authenticated: false, subject: "" },
@@ -14,6 +15,14 @@
     }
   };
   const valid = (v) => ["system", "light", "dark"].includes(v);
+  const navigationChoice = read("kagnode.core.sidebar.choice");
+  root.dataset.coreCollapsed = String(
+    navigationChoice === "collapsed" ||
+      (!navigationChoice &&
+        innerWidth >= 1024 &&
+        innerWidth < 1360 &&
+        matchMedia("(hover: hover) and (pointer: fine)").matches),
+  );
   function apply(value = preference) {
     preference = valid(value) ? value : "system";
     const theme =

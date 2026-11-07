@@ -35,16 +35,24 @@
       const links = [...toc.querySelectorAll('a[href^="#"]')],
         entries = links
           .map((link) => ({ link, target: section(link) }))
-          .filter((v) => v.target);
+          .filter((v) => v.target && v.target.getClientRects().length);
       let current = entries[0];
       const toolbar = document.querySelector(
           ".plan-reading-toolbar,[data-core-reading-toolbar]",
         ),
-        offset = toolbar
+        padding =
+          parseFloat(
+            getComputedStyle(document.documentElement).scrollPaddingTop,
+          ) || 0,
+        margin = entries[0]
+          ? parseFloat(getComputedStyle(entries[0].target).scrollMarginTop) || 0
+          : 0,
+        toolbarOffset = toolbar
           ? Math.max(0, parseFloat(getComputedStyle(toolbar).top) || 0) +
             toolbar.getBoundingClientRect().height +
             24
-          : 80;
+          : 80,
+        offset = Math.max(toolbarOffset, padding + margin + 2);
       for (const entry of entries)
         if (entry.target.getBoundingClientRect().top <= offset) current = entry;
       if (innerHeight + scrollY >= document.documentElement.scrollHeight - 2)
@@ -131,7 +139,7 @@
     }
     refresh();
   }
-  addEventListener("scroll", refresh, { passive: true });
+  addEventListener("scroll", refresh, { passive: true, capture: true });
   addEventListener("resize", refresh);
   addEventListener("hashchange", refresh);
   document.fonts?.ready.then(refresh);
