@@ -217,6 +217,9 @@ func ecosystemSetup() (result error) {
 			return err
 		}
 		choices := []setupChoice{{"check", "Check releases", "Read GitHub release information; no installation changes"}, {"install", "Install or update", "Verify source archive and retain previous release/data"}, {"setup", "Configure web service", "Set HTTPS address and local port after installation"}, {"status", "Installation status", "Show files, channel and the last operation"}}
+		if project == "cli" {
+			choices[2] = setupChoice{"activate-cli", "Activate managed CLI", "Add /usr/local/bin/kagnode without replacing existing executables"}
+		}
 		if project == "mail" || project == "vpn" || project == "httpboot" {
 			choices = append(choices, setupChoice{"bind-native", "Connect an existing installation", "Recognize this app's native paths and enable its guarded updater"}, setupChoice{"consolidate", "Consolidate application files", "Preview a move with retained originals and compatibility paths"})
 		}
@@ -238,6 +241,9 @@ func ecosystemSetup() (result error) {
 			return err
 		}
 		args := []string{"--root", root, action, project}
+		if action == "activate-cli" {
+			args = []string{"--root", root, action}
+		}
 		if action == "check" || action == "install" || action == "bind-native" {
 			channel, err := setupSelect("Release channel", []setupChoice{{"stable", "Stable", "Published stable releases with compatible manifests"}, {"preview", "Preview", "Explicitly include prereleases and packaging previews"}})
 			if err != nil {

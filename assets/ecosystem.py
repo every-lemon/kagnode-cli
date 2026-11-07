@@ -112,6 +112,7 @@ NATIVE_PROFILES = {
 }
 
 LIMIT = 512 * 1024 * 1024
+CLI_LINK = Path("/usr/local/bin/kagnode")
 
 
 class ManagerError(Exception):
@@ -1135,6 +1136,39 @@ class Manager:
             )
             return self.status(name)
 
+    def activate_cli(self):
+        """Opt-in PATH activation; never replace a package-owned executable."""
+        with self.lock("cli") as path:
+            current = path / "current"
+            binary = current / "kagnode"
+            if (
+                not current.is_symlink()
+                or not current.resolve().is_relative_to(path / "releases")
+                or not binary.is_file()
+                or binary.is_symlink()
+                or not os.access(binary, os.X_OK)
+            ):
+                raise ManagerError(
+                    "Install a verified CLI release before activating it."
+                )
+            destination = CLI_LINK
+            validate_root(destination.parent, self.require_root)
+            destination.parent.mkdir(parents=True, exist_ok=True, mode=0o755)
+            if destination.is_symlink() and os.readlink(destination) == str(binary):
+                return {
+                    "message": "The managed CLI is already active.",
+                    "executable": str(destination),
+                }
+            if destination.exists() or destination.is_symlink():
+                raise ManagerError(
+                    "An existing /usr/local/bin/kagnode was retained. Review its installation before activation."
+                )
+            destination.symlink_to(binary)
+            return {
+                "message": "The managed CLI is on PATH; future updates switch its current release.",
+                "executable": str(destination),
+            }
+
 
 def bitwarden_setup(root, origin, image, port=8816, apply=False):
     """Pinned upstream engine, isolated data; no automatic legacy-vault conversion."""
@@ -1486,6 +1520,7 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("list")
     sub.add_parser("serve")
+    sub.add_parser("activate-cli")
     migrate = sub.add_parser("consolidate")
     migrate.add_argument("project", choices=["mail", "vpn", "httpboot"])
     migrate.add_argument("--apply", action="store_true")
@@ -1537,6 +1572,8 @@ def main():
         result = manager.bind_native(args.project, args.channel)
     elif args.command == "serve":
         return serve(manager)
+    elif args.command == "activate-cli":
+        result = manager.activate_cli()
     elif args.command == "enable-panel":
         result = enable_panel(manager, args.project, args.user)
     elif args.command == "status":

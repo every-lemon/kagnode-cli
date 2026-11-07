@@ -33,7 +33,7 @@ mail storage or native service configuration.
 | Passwords | Yes | Python virtual environment, loopback web service |
 | Media | Yes | Node.js 24 web service; native codecs remain separate |
 | Logos | Yes | Data-only artwork with loopback gallery server |
-| CLI | Yes | Go source build; choose the resulting binary explicitly |
+| CLI | Yes | Go source build; opt-in PATH activation |
 | Mail | Yes | Bound existing installation: guarded web-code updates |
 | VPN | Yes | Bound existing installation: signed native updater |
 | HTTP Boot | Yes | Bound existing installation: web console only; images separate |
@@ -132,3 +132,12 @@ a database. Review `operation.json`, the retained release and its private backup
 Unit tests use disposable directories and mocked service/process calls; they do
 not install mail/network services, execute FFmpeg, build boot images or modify
 live vaults. Test deployments and native migrations separately before production.
+
+## Activating the managed CLI
+
+After `apps install cli`, choose **Activate managed CLI** in setup or run
+`sudo kagnode apps activate-cli`. This creates `/usr/local/bin/kagnode` pointing
+at the managed `current/kagnode`; it refuses to replace an existing executable.
+Future CLI updates switch the current release without rewriting an executing
+binary or changing package-owned `/usr/bin` files. Existing per-user credentials
+remain in their original private user directories.

@@ -74,7 +74,9 @@ class ReleaseTests(unittest.TestCase):
         cfg, product, version = release.identity()
         self.assertIn("packaging.", version)
         self.assertTrue(version.startswith(product))
-        self.assertEqual(cfg["revision"], 1)
+        self.assertIs(type(cfg["revision"]), int)
+        self.assertGreaterEqual(cfg["revision"], 1)
+        self.assertTrue(version.endswith("packaging." + str(cfg["revision"])))
 
 
 if __name__ == "__main__":

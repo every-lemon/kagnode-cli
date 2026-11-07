@@ -261,6 +261,25 @@ class EcosystemTests(unittest.TestCase):
         with self.assertRaises(eco.ManagerError):
             self.manager.status("passwords")
 
+    def test_cli_activation_keeps_existing_executables(self):
+        path = self.root / "cli"
+        release = path / "releases/fixture"
+        release.mkdir(parents=True)
+        binary = release / "kagnode"
+        binary.write_text("fixture executable")
+        binary.chmod(0o755)
+        (path / "current").symlink_to("releases/fixture")
+        destination = self.root / "bin/kagnode"
+        with patch.object(eco, "CLI_LINK", destination):
+            self.manager.activate_cli()
+            self.assertEqual(destination.resolve(), binary)
+            self.assertIn("already active", self.manager.activate_cli()["message"])
+            destination.unlink()
+            destination.write_text("existing executable")
+            with self.assertRaisesRegex(eco.ManagerError, "existing"):
+                self.manager.activate_cli()
+            self.assertEqual(destination.read_text(), "existing executable")
+
     def test_bitwarden_plan_is_digest_pinned_and_registration_disabled(self):
         image = "vaultwarden/server@sha256:" + "a" * 64
         result = eco.bitwarden_setup(self.root, "https://vault.example.test", image)
