@@ -95,7 +95,7 @@ class EcosystemTests(unittest.TestCase):
             eco.Manager(self.root, False)
 
     def fixtures(self, preview=True):
-        repo = "kagnode-authenticator"
+        repo = "kagnode-passwords"
         source = archive([("release/README.md", "file")])
         name = repo + "_0.6_source.tar.gz"
         prefix = "https://github.com/every-lemon/" + repo + "/releases/download/v0.6/"

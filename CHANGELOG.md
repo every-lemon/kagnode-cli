@@ -1,5 +1,9 @@
 # 1.2.0-beta.1 — ecosystem preview
 
+## 1.2.0-beta.1 packaging.2
+
+- Follow the renamed kagnode-passwords repository for Passwords releases and updates.
+
 - Add a keyboard-only install/setup wizard with scriptable `apps` operations.
 - Manage application code, configuration, data and backups under one chosen root.
 - Add reviewed GitHub updates, local app-specific sockets, native guards and retained backups.

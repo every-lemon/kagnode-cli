@@ -149,3 +149,7 @@ at the managed `current/kagnode`; it refuses to replace an existing executable.
 Future CLI updates switch the current release without rewriting an executing
 binary or changing package-owned `/usr/bin` files. Existing per-user credentials
 remain in their original private user directories.
+
+Passwords now publishes at `every-lemon/kagnode-passwords`. Upgrade older CLI
+previews to packaging.2 or later before checking its newly named packages. Local
+profile client IDs, native package names and existing vault paths stay compatible.
