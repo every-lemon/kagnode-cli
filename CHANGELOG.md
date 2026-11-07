@@ -1,3 +1,12 @@
+# 1.2.0-beta.1 — ecosystem preview
+
+- Add a keyboard-only install/setup wizard with scriptable `apps` operations.
+- Manage application code, configuration, data and backups under one chosen root.
+- Add reviewed GitHub updates, local app-specific sockets, native guards and retained backups.
+- Add explicit native path consolidation with inventories, journals and compatibility links.
+- Add digest-pinned Vaultwarden setup for Bitwarden clients alongside KagNode Passwords.
+- Existing native services and client images are not automatically provisioned or migrated.
+
 # 1.0.0
 
 ## 1.1.0

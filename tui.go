@@ -37,7 +37,7 @@ type tuiModel struct {
 	scroll    int
 }
 
-var tuiCommands = []string{"/help", "/login", "/whoami", "/logout", "/products", "/use", "/list", "/create", "/delete", "/demo", "/clear", "/quit"}
+var tuiCommands = []string{"/setup", "/apps", "/help", "/login", "/whoami", "/logout", "/products", "/use", "/list", "/create", "/delete", "/demo", "/clear", "/quit"}
 
 // Remote display names and command output must never become terminal control sequences.
 func tuiSafe(value string) string {
@@ -142,7 +142,7 @@ func (m *tuiModel) identity() {
 	}
 }
 func (m *tuiModel) help() {
-	m.add("/login             Sign in through your browser\n/whoami            Check your account online\n/products          Show the fictional product catalog\n/use vps           Select a product for /list, /create and /delete\n/list              List that product’s saved sample state\n/create NAME       Create a fictional sample item\n/delete ID         Remove a fictional sample item\n/demo install      Prepare the local example package\n/demo start|stop   Start or stop local browser examples\n/logout            Revoke and clear your CLI credentials\n/clear             Clear this screen’s history\n/quit              Leave the terminal workspace\n\nAccount sign-in is real. AI responses, VPS resources and billing in examples are fictional.")
+	m.add("/setup             Keyboard-only application setup wizard\n/apps list         List installable KagNode apps\n/apps check passwords --channel preview  Check GitHub releases\n/login             Sign in through your browser\n/whoami            Check your account online\n/products          Show the fictional product catalog\n/use vps           Select a product for /list, /create and /delete\n/list              List that product’s saved sample state\n/create NAME       Create a fictional sample item\n/delete ID         Remove a fictional sample item\n/demo install      Prepare the local example package\n/demo start|stop   Start or stop local browser examples\n/logout            Revoke and clear your CLI credentials\n/clear             Clear this screen’s history\n/quit              Leave the terminal workspace\n\nAccount sign-in is real. AI responses, VPS resources and billing in examples are fictional.")
 }
 func tuiArguments(command, product string) ([]string, error) {
 	parts := strings.Fields(command)
@@ -151,7 +151,7 @@ func tuiArguments(command, product string) ([]string, error) {
 	}
 	name := strings.TrimPrefix(parts[0], "/")
 	switch name {
-	case "login", "logout", "whoami", "demo":
+	case "login", "logout", "whoami", "demo", "apps":
 		return append([]string{name}, parts[1:]...), nil
 	case "list":
 		if len(parts) != 1 {
@@ -374,7 +374,7 @@ func terminalUI() error {
 	defer ticker.Stop()
 	model := tuiModel{product: "vps"}
 	model.identity()
-	model.add("Welcome to KagNode.\n\nSign in with /login, explore /products, or use /help.\nThis terminal manages your account and fictional local examples. It does not provision live cloud services.")
+	model.add("Welcome to KagNode.\n\nSet up applications with /setup, inspect /apps list, or sign in with /login.\nManage local applications, your account, and fictional cloud examples. It does not provision live cloud services.")
 	var cancel context.CancelFunc
 	defer func() {
 		if cancel != nil {
@@ -508,6 +508,8 @@ func terminalUI() error {
 				fields := strings.Fields(command)
 				name := strings.TrimPrefix(fields[0], "/")
 				switch name {
+				case "setup":
+					return errSetup
 				case "quit", "exit":
 					return nil
 				case "help":

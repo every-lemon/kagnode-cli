@@ -18,7 +18,10 @@ def run(check):
         for name in files
         if name.endswith(".py")
         and name not in GENERATED
-        and not any(part in name.split("/") for part in ["vendor", "assets"])
+        and (
+            name in {"assets/ecosystem.py", "assets/consolidate.py"}
+            or not any(part in name.split("/") for part in ["vendor", "assets"])
+        )
     ]
     if python:
         subprocess.run(

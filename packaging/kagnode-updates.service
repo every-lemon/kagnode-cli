@@ -1,0 +1,20 @@
+[Unit]
+Description=KagNode local application update manager
+After=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/kagnode apps --root /srv/kagnode serve
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=35min
+KillMode=mixed
+UMask=0077
+PrivateTmp=true
+ProtectHome=true
+# Updates need systemd control and access to the configured application root.
+# Socket peers are limited per application with apps enable-panel.
+
+[Install]
+WantedBy=multi-user.target
