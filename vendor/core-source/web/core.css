@@ -811,3 +811,13 @@ html[data-core-shell="inactive"] .kn-core-mobile-toggle {
 .kn-core-sidebar-navigation > .sidebar-header:empty {
   display: none !important;
 }
+
+/* Application-specific breakpoints cannot hide the shared drawer control. */
+@media (max-width: 1023px) {
+  html[data-core-shell="active"] :is([data-mobile], #mobile-menu) {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    visibility: visible !important;
+  }
+}

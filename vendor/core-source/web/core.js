@@ -346,6 +346,17 @@
       document.querySelector(".kn-core-mobile-toggle")?.remove();
       installSidebar();
     }
+    if (sidebar) {
+      const closed = mobile() && root.dataset.coreDrawer !== "true";
+      if (sidebar.inert !== closed) sidebar.inert = closed;
+    }
+    if (
+      root.dataset.coreDrawer === "true" &&
+      document.querySelector("dialog[open]")
+    )
+      drawer(false);
+    if (sidebar?.closest("[hidden]") && root.dataset.coreDrawer === "true")
+      drawer(false);
     all(
       "[data-theme-toggle],.theme-toggle,button[data-theme],#theme,#theme-toggle,[data-kn-theme]",
     ).forEach((b) => b.remove());
@@ -599,7 +610,7 @@
     childList: true,
     subtree: true,
     attributes: true,
-    attributeFilter: ["hidden"],
+    attributeFilter: ["hidden", "open", "inert"],
   });
   const loading = {
     show(label = "Loading…") {
@@ -637,8 +648,15 @@
     icons: window.KagNodeIcons,
     loading,
     closeAccount,
+    navigation: {
+      open: () => drawer(true),
+      close: () => drawer(false),
+      collapse: setCollapsed,
+    },
     refresh: normalize,
     setSession(value) {
+      if (!value.authenticated && root.dataset.coreDrawer === "true")
+        drawer(false);
       config.name = value.authenticated
         ? String(value.name || config.name || "")
         : "";
