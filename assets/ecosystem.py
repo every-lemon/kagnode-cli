@@ -37,7 +37,7 @@ import urllib.request
 CATALOG = {
     "passwords": {
         "name": "KagNode Passwords",
-        "repo": "kagnode-authenticator",
+        "repo": "kagnode-passwords",
         "kind": "python",
         "port": 8810,
     },
