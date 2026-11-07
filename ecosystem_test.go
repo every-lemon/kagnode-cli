@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"regexp"
 	"strings"
 	"testing"
@@ -22,6 +23,28 @@ func TestSetupFramesRemainKeyboardOnlyAndFit(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestGuidedSetupNeverActivatesAfterFailedInstallation(t *testing.T) {
+	install := []string{"--root", "/srv/kagnode", "install", "passwords"}
+	configure := []string{"--root", "/srv/kagnode", "setup", "passwords", "--origin", "https://vault.example.test"}
+	failed := errors.New("archive verification failed")
+	var calls [][]string
+	err := setupExecute(install, configure, func(args []string) error {
+		calls = append(calls, args)
+		return failed
+	})
+	if !errors.Is(err, failed) || len(calls) != 1 {
+		t.Fatal("setup continued after a failed installation", err, calls)
+	}
+	calls = nil
+	err = setupExecute(install, configure, func(args []string) error {
+		calls = append(calls, args)
+		return nil
+	})
+	if err != nil || len(calls) != 2 || strings.Join(calls[1], " ") != strings.Join(configure, " ") {
+		t.Fatal("successful install did not continue into reviewed setup", err, calls)
 	}
 }
 

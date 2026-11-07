@@ -217,6 +217,16 @@ func setupPrompt(label, fallback string) (string, error) {
 	return value, nil
 }
 
+func setupExecute(args, followup []string, run func([]string) error) error {
+	if err := run(args); err != nil {
+		return err
+	}
+	if len(followup) != 0 {
+		return run(followup)
+	}
+	return nil
+}
+
 func ecosystemSetup() (result error) {
 	defer func() {
 		if errors.Is(result, errSetupExit) || errors.Is(result, io.EOF) {
@@ -232,6 +242,9 @@ func ecosystemSetup() (result error) {
 		if project == "cli" {
 			choices[2] = setupChoice{"activate-cli", "Activate managed CLI", "Add /usr/local/bin/kagnode without replacing existing executables"}
 		}
+		if project == "passwords" || project == "media" || project == "logos" || project == "cli" {
+			choices = append([]setupChoice{{"guided", "Install and set up", "Choose your settings, then install and activate in one workflow"}}, choices...)
+		}
 		if project == "mail" || project == "vpn" || project == "httpboot" {
 			choices = append(choices, setupChoice{"bind-native", "Connect an existing installation", "Recognize this app's native paths and enable its guarded updater"}, setupChoice{"consolidate", "Consolidate application files", "Preview a move with retained originals and compatibility paths"})
 		}
@@ -241,22 +254,41 @@ func ecosystemSetup() (result error) {
 		if project == "passwords" {
 			choices = append(choices, setupChoice{"bitwarden", "Bitwarden apps & extensions", "Install the separate Vaultwarden engine with a pinned image"})
 		}
-		action, err := setupSelect("KagNode "+strings.ToUpper(project[:1])+project[1:], choices)
+		projectName := project
+		for _, choice := range setupProjects {
+			if choice.id == project {
+				projectName = choice.name
+			}
+		}
+		action, err := setupSelect("KagNode "+projectName, choices)
 		if err != nil {
 			return err
 		}
 		if action == "" {
 			continue
 		}
+		actionName := action
+		for _, choice := range choices {
+			if choice.id == action {
+				actionName = choice.name
+			}
+		}
 		root, err := setupPrompt("Application root", "/srv/kagnode")
 		if err != nil {
 			return err
 		}
 		args := []string{"--root", root, action, project}
+		var followup []string
+		if action == "guided" {
+			args = []string{"--root", root, "install", project}
+			if project == "cli" {
+				followup = []string{"--root", root, "activate-cli"}
+			}
+		}
 		if action == "activate-cli" {
 			args = []string{"--root", root, action}
 		}
-		if action == "check" || action == "install" || action == "bind-native" {
+		if action == "check" || action == "install" || action == "bind-native" || action == "guided" {
 			channel, err := setupSelect("Release channel", []setupChoice{{"stable", "Stable", "Published stable releases with compatible manifests"}, {"preview", "Preview", "Explicitly include prereleases and packaging previews"}})
 			if err != nil {
 				return err
@@ -286,12 +318,16 @@ func ecosystemSetup() (result error) {
 			}
 			args = append(args, "--apply")
 		}
-		if action == "setup" || action == "bitwarden" {
-			origin, err := setupPrompt("HTTPS address (for example https://passwords.example.com)", "")
+		if action == "setup" || action == "bitwarden" || (action == "guided" && project != "cli") {
+			origin, err := setupPrompt("HTTPS address (for example https://app.example.com)", "")
 			if err != nil {
 				return err
 			}
-			args = append(args, "--origin", origin)
+			if action == "guided" {
+				followup = []string{"--root", root, "setup", project, "--origin", origin}
+			} else {
+				args = append(args, "--origin", origin)
+			}
 			if action == "bitwarden" {
 				image, err := setupPrompt("Pinned image (leave empty to resolve the latest stable Vaultwarden release)", "")
 				if err != nil {
@@ -308,7 +344,7 @@ func ecosystemSetup() (result error) {
 				fmt.Println("Run sudo kagnode setup to install or configure applications.")
 				continue
 			}
-			ok, err := setupSelect("Review: "+action+" "+project+" in "+root, []setupChoice{{"back", "Back", "Keep the installation unchanged"}, {"apply", "Continue", "Apply this operation; preserve existing vaults and user data"}})
+			ok, err := setupSelect("Review: "+actionName+" · "+projectName+" in "+root, []setupChoice{{"back", "Back", "Keep the installation unchanged"}, {"apply", "Continue", "Apply this operation; preserve existing vaults and user data"}})
 			if err != nil {
 				return err
 			}
@@ -316,8 +352,8 @@ func ecosystemSetup() (result error) {
 				continue
 			}
 		}
-		fmt.Println("KagNode. / " + action + " " + project)
-		if err = ecosystemCommand(args); err != nil {
+		fmt.Println("KagNode. / " + projectName + " / " + actionName)
+		if err = setupExecute(args, followup, ecosystemCommand); err != nil {
 			fmt.Println("Operation failed. Inspect the message above before retrying.")
 		}
 		if _, err = setupPrompt("Press Enter to return to setup", ""); err != nil {

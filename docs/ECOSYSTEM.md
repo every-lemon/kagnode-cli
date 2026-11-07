@@ -2,7 +2,15 @@
 
 `kagnode setup` is a keyboard-only application wizard: arrows/Tab select, Enter
 continues, Esc goes back. It never enables mouse reporting. `kagnode tui` also
-provides `/setup` and `/apps`. Scriptable equivalents:
+provides `/setup` and `/apps`.
+
+For a fresh Passwords, Media, Logos or CLI installation, choose **Install and set
+up**. Select the channel and enter the HTTPS address once, then review the operation.
+The wizard installs the verified release and configures it in sequence; a failed
+installation stops before service activation. Existing deployments can use the
+separate update operation without rewriting their configuration.
+
+Scriptable equivalents:
 
 ```sh
 kagnode apps list
