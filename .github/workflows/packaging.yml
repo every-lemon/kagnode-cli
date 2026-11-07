@@ -57,4 +57,23 @@ jobs:
         run: |
           version=$(python3 -c 'import json;print(json.load(open("packages/release-manifest.json"))["version"])')
           test "$GITHUB_REF_NAME" = "packages/v$version"
-          gh release create "$GITHUB_REF_NAME" packages/* --verify-tag --prerelease --latest=false --title "Added for $version" --notes "Packaging preview. See README and release-manifest.json for payload types, tested targets and verification limits. Native Rocky Linux services are unverified."
+          product_version=$(python3 -c 'import json;print(json.load(open("packages/release-manifest.json"))["product_version"])')
+          packaging_revision=$(python3 -c 'import re,json;print(re.search(r"packaging\.(\d+)$",json.load(open("packages/release-manifest.json"))["version"])[1])')
+          release_notes=$(mktemp)
+          trap 'rm -f "$release_notes"' EXIT
+          cat > "$release_notes" <<'RELEASE_NOTES'
+          ## Status
+
+          Packaging preview. Existing stable-release selections remain unchanged.
+
+          ## Downloads
+
+          Linux amd64/arm64 binaries and separately labeled source archives/packages. CLI cloud examples remain fictional.
+
+          Rocky Linux 10 package preview; no native service operation is claimed.
+
+          Verify downloads with SHA256SUMS. release-manifest.json records the source commit, payload sizes and hashes.
+
+          [Installation and requirements](https://github.com/every-lemon/kagnode-cli#installation-and-downloads) · [Verification limits](https://github.com/every-lemon/kagnode-cli/blob/main/docs/VERIFICATION.md)
+          RELEASE_NOTES
+          gh release create "$GITHUB_REF_NAME" packages/* --verify-tag --prerelease --latest=false --title "KagNode CLI $product_version · Packaging preview $packaging_revision" --notes-file "$release_notes"
