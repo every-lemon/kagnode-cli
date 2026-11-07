@@ -8,7 +8,14 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-GENERATED = {"src/vpn_ui_assets.py", "httpboot/server_web_assets.py"}
+GENERATED = {
+    "src/vpn_ui_assets.py",
+    "httpboot/server_web_assets.py",
+    "authentactor/kagnode_core.py",
+    "kagnode/kagnode_core.py",
+    "src/kagnode_core.py",
+    "httpboot/kagnode_core.py",
+}
 
 
 def run(check):

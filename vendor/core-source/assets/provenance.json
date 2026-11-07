@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "artwork_repository": "https://github.com/every-lemon/kagnode-logos",
+  "artwork_commit": "4ed56a1b61fa29c6fd172634c3dcb2c9cf3597c6",
+  "files": [
+    {
+      "path": "assets/mark.svg",
+      "source": "svg/mark-blue.svg",
+      "sha256": "442e9ef8606c1e326b2fc097df770faf1dcfe6a4f0f55e28070c0c9ae04eb9e9",
+      "license": "assets/ARTWORK-LICENSE"
+    }
+  ],
+  "icons": {
+    "path": "assets/icons.json",
+    "origin": "Extracted KagNode application icon paths",
+    "license": "AGPL-3.0-only"
+  }
+}

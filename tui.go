@@ -37,7 +37,7 @@ type tuiModel struct {
 	scroll    int
 }
 
-var tuiCommands = []string{"/setup", "/apps", "/help", "/login", "/whoami", "/logout", "/products", "/use", "/list", "/create", "/delete", "/demo", "/clear", "/quit"}
+var tuiCommands = []string{"/setup", "/apps", "/core", "/help", "/login", "/whoami", "/logout", "/products", "/use", "/list", "/create", "/delete", "/demo", "/clear", "/quit"}
 
 // Remote display names and command output must never become terminal control sequences.
 func tuiSafe(value string) string {
@@ -151,7 +151,7 @@ func tuiArguments(command, product string) ([]string, error) {
 	}
 	name := strings.TrimPrefix(parts[0], "/")
 	switch name {
-	case "login", "logout", "whoami", "demo", "apps":
+	case "login", "logout", "whoami", "demo", "apps", "core":
 		return append([]string{name}, parts[1:]...), nil
 	case "list":
 		if len(parts) != 1 {
