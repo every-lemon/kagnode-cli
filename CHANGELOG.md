@@ -1,5 +1,9 @@
 # 1.2.0-beta.1 — ecosystem preview
 
+## Control lock validation preview
+
+Open application, native and daemon locks without blocking on special files. Reject nonregular, linked, foreign-owned or writable control files before locking or changing permissions; preserve existing contents and inodes. Read-only probes report damaged controls as recovery errors instead of enabling updates. Existing lock contention remains enforced.
+
 ## Update metadata recovery preview
 
 Read bounded, typed local metadata without following links. Report corruption without replacing files, distinguish live locks from abandoned progress, reuse migration validation for legacy status and enforce complete native guard inventories. Local manager status stays available when an operation record is damaged.

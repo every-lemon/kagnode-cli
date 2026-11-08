@@ -145,6 +145,33 @@ def atomic(path, value, mode=0o600):
             os.unlink(temporary)
 
 
+@contextlib.contextmanager
+def lock_handle(path, *, create=False, privileged=False):
+    """Open control files without blocking on pipes or modifying foreign inodes."""
+    flags = (
+        os.O_NOFOLLOW
+        | os.O_NONBLOCK
+        | (os.O_RDWR | os.O_CREAT if create else os.O_RDONLY)
+    )
+    try:
+        descriptor = os.open(path, flags, 0o600)
+    except (FileNotFoundError, PermissionError):
+        raise
+    except OSError:
+        raise MetadataError(path) from None
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise MetadataError(path)
+        if privileged and (info.st_uid != 0 or info.st_mode & 0o022):
+            raise MetadataError(path)
+        if create and privileged:
+            os.fchmod(descriptor, 0o600)
+        yield descriptor
+    finally:
+        os.close(descriptor)
+
+
 def validate_metadata(path, value):
     if value is None and path.name == "candidate.json":
         return
@@ -531,8 +558,9 @@ class Manager:
         lock_path = directory / ("ecosystem-" + name + ".lock")
         if lock_path.exists():
             validate_root(lock_path, self.require_root)
-        descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
-        try:
+        with lock_handle(
+            lock_path, create=True, privileged=self.require_root
+        ) as descriptor:
             try:
                 fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
@@ -540,8 +568,6 @@ class Manager:
                     "Another operation is already using this native installation."
                 )
             yield
-        finally:
-            os.close(descriptor)
 
     @contextlib.contextmanager
     def lock(self, name):
@@ -554,9 +580,14 @@ class Manager:
         path.mkdir(exist_ok=True, mode=0o755)
         self.root.chmod(0o755)
         path.chmod(0o755)
-        with self.native_lock(name), (path / ".lock").open("a") as stream:
+        with (
+            self.native_lock(name),
+            lock_handle(
+                path / ".lock", create=True, privileged=self.require_root
+            ) as descriptor,
+        ):
             try:
-                fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
                 raise ManagerError(
                     "Another operation is already running for this application."
@@ -570,18 +601,13 @@ class Manager:
             locks.append(marker.with_name("ecosystem-" + path.name + ".lock"))
         for lock_path in locks:
             try:
-                descriptor = os.open(
-                    lock_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
-                )
+                with lock_handle(lock_path, privileged=self.require_root) as descriptor:
+                    try:
+                        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except BlockingIOError:
+                        return True
             except FileNotFoundError:
                 continue
-            try:
-                try:
-                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                except BlockingIOError:
-                    return True
-            finally:
-                os.close(descriptor)
         return False
 
     def status(self, name):
@@ -600,7 +626,11 @@ class Manager:
                     metadata[filename] = fallback
                     errors.append({"file": error.filename, "message": str(error)})
             state = metadata["state.json"]
-            in_progress = self.operation_running(path)
+            try:
+                in_progress = self.operation_running(path)
+            except MetadataError as error:
+                in_progress = False
+                errors.append({"file": error.filename, "message": str(error)})
             recovery = bool(
                 errors
                 or state.get("needs_recovery")
@@ -1682,9 +1712,11 @@ def serve(manager, stop_event=None):
     for field in ("manager.json", ".manager.lock"):
         if (manager.root / field).is_symlink():
             raise ManagerError("Unsafe manager configuration path.")
-    with (manager.root / ".manager.lock").open("a") as lock:
+    with lock_handle(
+        manager.root / ".manager.lock", create=True, privileged=manager.require_root
+    ) as descriptor:
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as error:
             raise ManagerError("The update manager is already running.") from error
         return serve_locked(manager, stop_event)

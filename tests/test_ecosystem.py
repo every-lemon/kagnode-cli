@@ -412,6 +412,147 @@ class EcosystemTests(unittest.TestCase):
         result = self.manager.status("passwords")
         self.assertFalse(result["in_progress"])
 
+    def test_fifo_application_lock_fails_without_hanging(self):
+        path = self.root / "passwords"
+        path.mkdir(parents=True)
+        lock = path / ".lock"
+        os.mkfifo(lock)
+        helper = Path(__file__).resolve().parents[1] / "assets"
+        code = "import sys;sys.path.insert(0,sys.argv[1]);from ecosystem import Manager\nwith Manager(sys.argv[2],False).lock('passwords'): pass"
+        try:
+            result = subprocess.run(
+                [sys.executable, "-c", code, str(helper), str(self.root)],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+        except subprocess.TimeoutExpired:
+            self.fail("A FIFO lock blocked the update process")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Invalid local metadata", result.stderr)
+        self.assertTrue(lock.exists())
+
+    def test_nonregular_lock_status_does_not_claim_update_is_available(self):
+        path = self.root / "passwords"
+        path.mkdir(parents=True)
+        os.mkfifo(path / ".lock")
+        status = self.manager.status("passwords")
+        self.assertTrue(status["needs_recovery"])
+        self.assertFalse(status["can_apply"])
+        self.assertIn(".lock", json.dumps(status["metadata_errors"]))
+
+    def test_lock_handle_preserves_inode_and_existing_contents(self):
+        path = self.root / "control.lock"
+        path.parent.mkdir(parents=True)
+        path.write_text("existing diagnostic bytes")
+        before = path.stat().st_ino
+        with eco.lock_handle(path, create=True):
+            self.assertEqual(path.stat().st_ino, before)
+        self.assertEqual(path.read_text(), "existing diagnostic bytes")
+        self.assertEqual(path.stat().st_ino, before)
+        new = self.root / "new.lock"
+        with eco.lock_handle(new, create=True):
+            self.assertEqual(new.stat().st_mode & 0o777, 0o600)
+
+    @unittest.skipUnless(
+        os.geteuid() == 0, "Daemon and privileged lock fixture requires root"
+    )
+    def test_invalid_application_native_and_daemon_locks_fail_without_mutation(self):
+        helper = Path(__file__).resolve().parents[1] / "assets"
+        code = """import sys
+sys.path.insert(0,sys.argv[1])
+from unittest.mock import patch
+import ecosystem as e
+m=e.Manager(sys.argv[2],False,system_root=sys.argv[3])
+try:
+    if sys.argv[4]=='app':
+        with m.lock('passwords'): pass
+    elif sys.argv[4]=='native':
+        with m.native_lock('mail'): pass
+    else:
+        with patch.object(e,'serve_locked',return_value=None): e.serve(m)
+except e.ManagerError as error:
+    print(str(error));sys.exit(7)
+sys.exit(0)
+"""
+        paths = {
+            "app": self.root / "passwords/.lock",
+            "native": self.root.parent
+            / "var/lib/kagnode-migrations/ecosystem-mail.lock",
+            "daemon": self.root / ".manager.lock",
+        }
+        for scope, path in paths.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            for kind in ("fifo", "directory", "symlink", "hardlink"):
+                with self.subTest(scope=scope, kind=kind):
+                    foreign = self.root / "foreign.fixture"
+                    foreign.write_text("preserve unrelated data")
+                    info = foreign.stat()
+                    if kind == "fifo":
+                        os.mkfifo(path)
+                    elif kind == "directory":
+                        path.mkdir()
+                    elif kind == "symlink":
+                        path.symlink_to(foreign)
+                    else:
+                        os.link(foreign, path)
+                    try:
+                        result = subprocess.run(
+                            [
+                                sys.executable,
+                                "-c",
+                                code,
+                                str(helper),
+                                str(self.root),
+                                str(self.root.parent),
+                                scope,
+                            ],
+                            capture_output=True,
+                            text=True,
+                            timeout=2,
+                        )
+                        self.assertEqual(
+                            result.returncode, 7, result.stdout + result.stderr
+                        )
+                        self.assertTrue(path.exists() or path.is_symlink())
+                        self.assertEqual(foreign.read_text(), "preserve unrelated data")
+                        self.assertEqual(
+                            (foreign.stat().st_ino, foreign.stat().st_mode),
+                            (info.st_ino, info.st_mode),
+                        )
+                    finally:
+                        if path.is_dir() and not path.is_symlink():
+                            path.rmdir()
+                        else:
+                            path.unlink(missing_ok=True)
+                        foreign.unlink()
+
+    @unittest.skipUnless(
+        os.geteuid() == 0, "Privileged ownership fixture requires root"
+    )
+    def test_privileged_locks_reject_foreign_owner_or_writable_mode(self):
+        path = self.root / "control.lock"
+        path.parent.mkdir(parents=True)
+        path.write_text("preserve lock bytes")
+        path.chmod(0o666)
+        with self.assertRaises(eco.MetadataError):
+            with eco.lock_handle(path, create=True, privileged=True):
+                pass
+        self.assertEqual(path.stat().st_mode & 0o777, 0o666)
+        path.chmod(0o644)
+        os.chown(path, 65534, 65534)
+        with self.assertRaises(eco.MetadataError):
+            with eco.lock_handle(path, create=True, privileged=True):
+                pass
+        self.assertEqual(path.stat().st_uid, 65534)
+        os.chown(path, 0, 0)
+        inode = path.stat().st_ino
+        with eco.lock_handle(path, create=True, privileged=True):
+            pass
+        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(path.stat().st_ino, inode)
+        self.assertEqual(path.read_text(), "preserve lock bytes")
+
     def test_checksum_failure_never_activates(self):
         fetch, manifest, _ = self.fixtures()
         next(iter(manifest["assets"].values()))["sha256"] = "0" * 64
