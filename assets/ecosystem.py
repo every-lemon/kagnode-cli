@@ -119,6 +119,16 @@ class ManagerError(Exception):
     pass
 
 
+class MetadataError(ManagerError):
+    def __init__(self, path):
+        self.filename = Path(path).name
+        super().__init__(
+            "Invalid local metadata in "
+            + self.filename
+            + ". Review or restore this file before continuing."
+        )
+
+
 def atomic(path, value, mode=0o600):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -135,11 +145,144 @@ def atomic(path, value, mode=0o600):
             os.unlink(temporary)
 
 
+def validate_metadata(path, value):
+    if value is None and path.name == "candidate.json":
+        return
+    if not isinstance(value, dict):
+        raise MetadataError(path)
+    if path.name not in (
+        "state.json",
+        "candidate.json",
+        "operation.json",
+        "manager.json",
+    ):
+        return
+    for field in ("active", "needs_recovery", "changed", "prerelease"):
+        if field in value and type(value[field]) is not bool:
+            raise MetadataError(path)
+    for field in (
+        "version",
+        "tag",
+        "origin",
+        "repository",
+        "url",
+        "message",
+        "recovery",
+    ):
+        if field in value and (
+            not isinstance(value[field], str) or len(value[field]) > 65536
+        ):
+            raise MetadataError(path)
+    if "channel" in value and value["channel"] not in ("stable", "preview"):
+        raise MetadataError(path)
+    if "adapter" in value and value["adapter"] not in ("managed", "native-web"):
+        raise MetadataError(path)
+    for field, length in (("source_commit", 40), ("sha256", 64)):
+        if field in value and (
+            not isinstance(value[field], str)
+            or not re.fullmatch("[a-f0-9]{" + str(length) + "}", value[field])
+        ):
+            raise MetadataError(path)
+    for field in ("release_id", "size", "checked", "updated", "installed_at"):
+        if field in value and (type(value[field]) is not int or value[field] < 0):
+            raise MetadataError(path)
+    if "port" in value and (
+        type(value["port"]) is not int or not 1024 <= value["port"] <= 65535
+    ):
+        raise MetadataError(path)
+    if "native_binding" in value:
+        binding = value["native_binding"]
+        if (
+            not isinstance(binding, dict)
+            or not isinstance(binding.get("profile"), str)
+            or binding["profile"] not in NATIVE_PROFILES
+        ):
+            raise MetadataError(path)
+        guards = binding.get("guards")
+        if not isinstance(guards, dict) or set(guards) != set(
+            NATIVE_PROFILES[binding["profile"]]["guards"]
+        ):
+            raise MetadataError(path)
+        if any(
+            not isinstance(digest, str) or not re.fullmatch(r"[a-f0-9]{64}", digest)
+            for digest in guards.values()
+        ):
+            raise MetadataError(path)
+    if (
+        path.name == "operation.json"
+        and "phase" in value
+        and value["phase"]
+        not in (
+            "queued",
+            "checking",
+            "downloading",
+            "preparing",
+            "complete",
+            "failed",
+            "interrupted",
+        )
+    ):
+        raise MetadataError(path)
+    if path.name == "manager.json":
+        panels = value.get("panels", {})
+        if not isinstance(panels, dict):
+            raise MetadataError(path)
+        for name, account in panels.items():
+            if (
+                name not in CATALOG
+                or not isinstance(account, dict)
+                or any(
+                    type(account.get(field)) is not int or account[field] < 0
+                    for field in ("uid", "gid")
+                )
+            ):
+                raise MetadataError(path)
+
+
 def read(path, default=None):
+    path = Path(path)
+
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise MetadataError(path)
+            result[key] = value
+        return result
+
     try:
-        return json.loads(Path(path).read_text())
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except FileNotFoundError:
         return default
+    except PermissionError:
+        raise
+    except OSError:
+        raise MetadataError(path) from None
+    try:
+        stream = None
+        try:
+            info = os.fstat(descriptor)
+            if not stat.S_ISREG(info.st_mode) or info.st_size > 1024 * 1024:
+                raise MetadataError(path)
+            stream = os.fdopen(descriptor, "rb")
+            with stream:
+                data = stream.read(1024 * 1024 + 1)
+        finally:
+            if stream is None:
+                os.close(descriptor)
+        if len(data) > 1024 * 1024:
+            raise MetadataError(path)
+
+        def invalid_constant(_):
+            raise MetadataError(path)
+
+        value = json.loads(
+            data, object_pairs_hook=unique, parse_constant=invalid_constant
+        )
+        validate_metadata(path, value)
+        return value
+    except (ValueError, UnicodeError, RecursionError):
+        raise MetadataError(path) from None
 
 
 def https_url(url, repo=None):
@@ -323,13 +466,57 @@ class Manager:
             return True
         # Also recognize journals created before shared recovery markers existed.
         journal = marker.with_name("ecosystem-" + path.name + ".json")
+        if not journal.exists():
+            return False
         try:
-            previous = read(journal)
-            return previous is not None and previous.get("status") not in (
+            from consolidate import load_journal, validate_journal
+
+            previous = load_journal(journal)
+            if not isinstance(previous, dict) or previous.get("status") not in (
                 "complete",
                 "rolled-back",
+            ):
+                return True
+            records = previous.get("records")
+            if not isinstance(records, list) or not records:
+                return True
+            completed = (
+                ("complete",)
+                if previous["status"] == "complete"
+                else ("planned", "ready", "rolled-back")
             )
-        except (OSError, ValueError, AttributeError):
+            if any(
+                not isinstance(row, dict) or row.get("stage") not in completed
+                for row in records
+            ):
+                return True
+            destination = previous.get("destination")
+            if not isinstance(destination, str):
+                return True
+            validate_root(
+                Path(self.system_root) / destination.lstrip("/"), self.require_root
+            )
+            args = argparse.Namespace(
+                project=path.name,
+                destination=Path(destination),
+                apply=False,
+                rollback=False,
+            )
+
+            def local(raw):
+                target = Path(self.system_root) / raw.lstrip("/")
+                for parent in target.parents:
+                    if parent == Path(self.system_root):
+                        break
+                    if parent.is_symlink():
+                        raise ManagerError(
+                            "Migration path must not pass through a symlink."
+                        )
+                return target
+
+            validate_journal(previous, args, Path(self.system_root), local)
+            return False
+        except (OSError, ValueError, RuntimeError, ManagerError, ImportError):
             return True
 
     @contextlib.contextmanager
@@ -376,14 +563,54 @@ class Manager:
                 )
             yield path
 
+    def operation_running(self, path):
+        locks = [path / ".lock"]
+        marker = self.migration_marker(path.name)
+        if marker is not None:
+            locks.append(marker.with_name("ecosystem-" + path.name + ".lock"))
+        for lock_path in locks:
+            try:
+                descriptor = os.open(
+                    lock_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+                )
+            except FileNotFoundError:
+                continue
+            try:
+                try:
+                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    return True
+            finally:
+                os.close(descriptor)
+        return False
+
     def status(self, name):
         name, path = self.project(name)
+        metadata = {}
+        errors = []
         try:
-            state = read(path / "state.json", {})
+            for filename, fallback in (
+                ("state.json", {}),
+                ("operation.json", {}),
+                ("candidate.json", None),
+            ):
+                try:
+                    metadata[filename] = read(path / filename, fallback)
+                except MetadataError as error:
+                    metadata[filename] = fallback
+                    errors.append({"file": error.filename, "message": str(error)})
+            state = metadata["state.json"]
+            in_progress = self.operation_running(path)
             recovery = bool(
-                state.get("needs_recovery")
-                or (path / "activation.json").exists()
-                or self.migration_pending(path)
+                errors
+                or state.get("needs_recovery")
+                or (
+                    (
+                        (path / "activation.json").exists()
+                        or self.migration_pending(path)
+                    )
+                    and not in_progress
+                )
             )
         except PermissionError:
             return {
@@ -398,18 +625,23 @@ class Manager:
             **CATALOG[name],
             "root": str(path),
             "needs_recovery": recovery,
+            "in_progress": in_progress,
+            "metadata_errors": errors,
             "recovery": (
-                "An update or migration needs recovery review. Check activation.json, migration.json, operation.json and retained backups before continuing."
+                "Review or restore damaged metadata; checking releases again can replace a damaged candidate cache."
+                if errors
+                else "An update or migration needs recovery review. Check activation.json, migration.json, operation.json and retained backups before continuing."
                 if recovery
                 else None
             ),
             "installed": state.get("version"),
             "active": state.get("active", False),
             "channel": state.get("channel", "stable"),
-            "operation": read(path / "operation.json", {}),
-            "candidate": read(path / "candidate.json", None),
+            "operation": metadata["operation.json"],
+            "candidate": metadata["candidate.json"],
             "adapter": state.get("adapter", "managed"),
             "can_apply": not recovery
+            and not in_progress
             and (
                 CATALOG[name]["kind"] not in ("native", "signed-native")
                 or bool(state.get("native_binding"))
@@ -540,6 +772,8 @@ class Manager:
         self.sync_directory(path)
 
     def require_recovered(self, path, state, allow_migration=False):
+        read(path / "operation.json", {})
+        read(path / "candidate.json", None)
         if (
             state.get("needs_recovery")
             or (path / "activation.json").exists()
@@ -910,8 +1144,18 @@ class Manager:
     def apply_native(self, name, path, release, state):
         profile = NATIVE_PROFILES.get(name)
         binding = state.get("native_binding", {})
-        if not profile or binding.get("profile") != name:
+        if (
+            not profile
+            or not isinstance(binding, dict)
+            or binding.get("profile") != name
+        ):
             raise ManagerError("Unrecognized native update binding.")
+        if not isinstance(binding.get("guards"), dict) or set(binding["guards"]) != set(
+            profile["guards"]
+        ):
+            raise ManagerError(
+                "Native guard inventory is incomplete or changed; recovery review is required."
+            )
         native = self.native_root(name)
         for field, digest in binding["guards"].items():
             if (
@@ -1418,7 +1662,10 @@ def enable_panel(manager, name, username):
     with manager.lock(name):
         account = pwd.getpwnam(username)
         configured = read(manager.root / "manager.json", {"panels": {}})
-        configured["panels"][name] = {"uid": account.pw_uid, "gid": account.pw_gid}
+        configured.setdefault("panels", {})[name] = {
+            "uid": account.pw_uid,
+            "gid": account.pw_gid,
+        }
         atomic(manager.root / "manager.json", configured)
     return {
         "message": "Panel authorized. Start kagnode apps serve as root, or install its systemd service.",
@@ -1535,6 +1782,7 @@ def serve_locked(manager, stop_event=None):
                                     raise ManagerError(
                                         "Native updates require the project's verified updater. This panel can check releases; it will not bypass native validation."
                                     )
+                                manager.require_recovered(manager.root / project, state)
                                 manager.operation(
                                     manager.root / project,
                                     "queued",
@@ -1590,8 +1838,17 @@ def serve_locked(manager, stop_event=None):
                 for field in ("uid", "gid")
             ):
                 raise ManagerError("Invalid panel account configuration.")
-            previous = read(manager.root / name / "operation.json", {})
-            if previous.get("phase") in ("queued", "downloading", "preparing"):
+            try:
+                previous = read(manager.root / name / "operation.json", {})
+            except MetadataError:
+                # Keep the daemon available for diagnostic status. Never replace
+                # a damaged progress record with a misleading restart result.
+                previous = {}
+            if previous.get("phase") in (
+                "queued",
+                "downloading",
+                "preparing",
+            ) and not manager.operation_running(manager.root / name):
                 manager.operation(
                     manager.root / name,
                     "interrupted",

@@ -115,10 +115,15 @@ def load_journal(path):
 
 
 def validate_journal(data, args, root, local):
+    project = "ecosystem-" + args.project
+    mappings = [
+        (old, str(args.destination / args.project / new))
+        for old, new in LAYOUTS[args.project][0]
+    ]
     if not isinstance(data, dict):
         invalid_journal("expected an object")
     if (data.get("project"), data.get("root"), data.get("destination")) != (
-        PROJECT,
+        project,
         str(root),
         str(args.destination),
     ):
@@ -130,7 +135,7 @@ def validate_journal(data, args, root, local):
     if data.get("status") not in ("planned", "complete", "rolling-back", "rolled-back"):
         invalid_journal("unknown migration status")
     records = data.get("records")
-    if not isinstance(records, list) or not 1 <= len(records) <= len(MAPPINGS):
+    if not isinstance(records, list) or not 1 <= len(records) <= len(mappings):
         invalid_journal("invalid record inventory")
     rollback_mode = (
         args.rollback
@@ -142,7 +147,7 @@ def validate_journal(data, args, root, local):
     )
     if args.apply and rollback_mode and data["status"] != "rolled-back":
         invalid_journal("rollback is unfinished; resume with --rollback")
-    allowed = dict(MAPPINGS)
+    allowed = dict(mappings)
     seen = []
     for record in records:
         if not isinstance(record, dict):
@@ -155,7 +160,7 @@ def validate_journal(data, args, root, local):
             invalid_journal("destination does not match the application layout")
         original = Path(old)
         backup_name = str(
-            original.with_name(original.name + ".before-kagnode-" + PROJECT)
+            original.with_name(original.name + ".before-kagnode-" + project)
         ).lstrip("/")
         if record.get("backup") != backup_name:
             invalid_journal("backup does not match the retained original path")
@@ -279,10 +284,10 @@ def validate_journal(data, args, root, local):
                     )
     expected_order = [
         old
-        for old, _ in sorted(MAPPINGS, key=lambda pair: len(Path(pair[1]).parts))
+        for old, _ in sorted(mappings, key=lambda pair: len(Path(pair[1]).parts))
         if old in seen
     ]
-    if seen != expected_order or MAPPINGS[0][0] not in seen:
+    if seen != expected_order or mappings[0][0] not in seen:
         invalid_journal("missing runtime or out-of-order records")
 
 

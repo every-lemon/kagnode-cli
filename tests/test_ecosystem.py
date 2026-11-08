@@ -17,11 +17,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-spec = importlib.util.spec_from_file_location(
-    "ecosystem", Path(__file__).resolve().parents[1] / "assets/ecosystem.py"
-)
-eco = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(eco)
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "assets"))
+import ecosystem as eco
 
 
 def archive(entries):
@@ -246,7 +243,18 @@ class EcosystemTests(unittest.TestCase):
             candidate = self.manager.check("passwords", "preview")
         path = self.root / "mail"
         path.mkdir(parents=True)
-        eco.atomic(path / "state.json", {"native_binding": {"profile": "mail"}})
+        eco.atomic(
+            path / "state.json",
+            {
+                "native_binding": {
+                    "profile": "mail",
+                    "guards": {
+                        field: "0" * 64
+                        for field in eco.NATIVE_PROFILES["mail"]["guards"]
+                    },
+                }
+            },
+        )
         original_atomic = eco.atomic
 
         def fail_state(target, value, *args, **kwargs):
@@ -272,7 +280,15 @@ class EcosystemTests(unittest.TestCase):
     def test_signed_native_failure_keeps_marker_before_running_updater(self):
         path = self.root / "vpn"
         path.mkdir(parents=True)
-        state = {"version": "old", "native_binding": {"profile": "vpn"}}
+        state = {
+            "version": "old",
+            "native_binding": {
+                "profile": "vpn",
+                "guards": {
+                    field: "0" * 64 for field in eco.NATIVE_PROFILES["vpn"]["guards"]
+                },
+            },
+        }
         eco.atomic(path / "state.json", state)
         data = b"mock updater; never executed"
         candidate = {
@@ -320,6 +336,81 @@ class EcosystemTests(unittest.TestCase):
             status = self.manager.status("mail")
         self.assertFalse(status["can_apply"])
         self.assertIn("sudo", status["message"])
+
+    def test_damaged_metadata_returns_recovery_status_and_preserves_bytes(self):
+        path = self.root / "passwords"
+        path.mkdir(parents=True)
+        for filename, raw in [
+            ("state.json", "{"),
+            ("state.json", "[]"),
+            ("state.json", '{"active":"false"}'),
+            ("state.json", '{"active":true,"active":false}'),
+            ("operation.json", "[]"),
+            ("candidate.json", "{"),
+        ]:
+            with self.subTest(file=filename, raw=raw):
+                for name in ("state.json", "operation.json", "candidate.json"):
+                    (path / name).unlink(missing_ok=True)
+                eco.atomic(path / "state.json", {"version": "fixture", "active": False})
+                (path / filename).write_text(raw)
+                result = self.manager.status("passwords")
+                self.assertTrue(result["needs_recovery"])
+                self.assertFalse(result["can_apply"])
+                self.assertIn(filename, json.dumps(result["metadata_errors"]))
+                with patch.object(eco, "request") as network:
+                    with self.assertRaises(eco.ManagerError):
+                        self.manager.install("passwords", "preview")
+                    network.assert_not_called()
+                self.assertEqual((path / filename).read_text(), raw)
+
+    def test_metadata_reader_rejects_nonregular_and_oversized_files(self):
+        path = self.root / "passwords"
+        path.mkdir(parents=True)
+        state = path / "state.json"
+        for kind in ("directory", "fifo", "oversized", "symlink"):
+            with self.subTest(kind=kind):
+                if kind == "directory":
+                    state.mkdir()
+                elif kind == "fifo":
+                    os.mkfifo(state)
+                elif kind == "oversized":
+                    state.write_text(" " * (1024 * 1024) + "{}")
+                else:
+                    target = self.root / "foreign"
+                    target.write_text("private fixture")
+                    state.symlink_to(target)
+                with self.assertRaises(eco.MetadataError):
+                    eco.read(state)
+                if kind == "directory":
+                    state.rmdir()
+                else:
+                    state.unlink()
+
+    def test_null_candidate_cache_is_a_valid_no_release_result(self):
+        path = self.root / "passwords"
+        eco.atomic(path / "candidate.json", None)
+        status = self.manager.status("passwords")
+        self.assertFalse(status["needs_recovery"])
+        self.assertIsNone(status["candidate"])
+        self.assertEqual(status["metadata_errors"], [])
+
+    def test_status_distinguishes_live_operation_from_abandoned_marker(self):
+        path = self.root / "passwords"
+        eco.atomic(path / "activation.json", {"adapter": "managed"})
+        with self.manager.lock("passwords"):
+            busy = self.manager.status("passwords")
+            self.assertTrue(busy["in_progress"])
+            self.assertFalse(busy["needs_recovery"])
+            self.assertFalse(busy["can_apply"])
+        stopped = self.manager.status("passwords")
+        self.assertFalse(stopped["in_progress"])
+        self.assertTrue(stopped["needs_recovery"])
+        self.assertFalse(stopped["can_apply"])
+
+    def test_progress_label_without_live_lock_is_not_a_running_operation(self):
+        eco.atomic(self.root / "passwords/operation.json", {"phase": "preparing"})
+        result = self.manager.status("passwords")
+        self.assertFalse(result["in_progress"])
 
     def test_checksum_failure_never_activates(self):
         fetch, manifest, _ = self.fixtures()
@@ -586,7 +677,9 @@ class SocketManagerTests(unittest.TestCase):
             stale.bind(str(path))
             stale.close()
             eco.atomic(root / "passwords/operation.json", {"phase": "preparing"})
-            for _ in range(2):
+            for iteration in range(3):
+                if iteration == 2:
+                    (root / "passwords/operation.json").write_text("{")
                 stop = threading.Event()
                 errors = []
 
@@ -623,7 +716,43 @@ class SocketManagerTests(unittest.TestCase):
                         response += chunk
                     connection.close()
                     self.assertIn(b"200 OK", response)
-                    self.assertIn(b'"interrupted"', response)
+                    if iteration < 2:
+                        self.assertIn(b'"interrupted"', response)
+                    else:
+                        payload = json.loads(response.split(b"\r\n\r\n", 1)[1])
+                        self.assertFalse(payload["can_apply"])
+                        self.assertEqual(
+                            payload["metadata_errors"][0]["file"], "operation.json"
+                        )
+                        self.assertEqual(
+                            (root / "passwords/operation.json").read_text(), "{"
+                        )
+                        eco.atomic(root / "passwords/state.json", [])
+                        with patch.object(eco, "request") as network:
+                            for action in ("state", "check"):
+                                with socket.socket(socket.AF_UNIX) as fresh:
+                                    fresh.connect(str(path))
+                                    data = json.dumps({"action": action}).encode()
+                                    fresh.sendall(
+                                        b"POST / HTTP/1.0\r\nContent-Length: "
+                                        + str(len(data)).encode()
+                                        + b"\r\n\r\n"
+                                        + data
+                                    )
+                                    result = b""
+                                    while chunk := fresh.recv(65536):
+                                        result += chunk
+                                    self.assertIn(
+                                        b"200 OK"
+                                        if action == "state"
+                                        else b"400 Bad Request",
+                                        result,
+                                    )
+                                    self.assertIn(b"state.json", result)
+                            network.assert_not_called()
+                        self.assertEqual(
+                            json.loads((root / "passwords/state.json").read_text()), []
+                        )
                     probe = subprocess.run(
                         [
                             eco.sys.executable,
@@ -687,6 +816,20 @@ class NativeAdapters(unittest.TestCase):
         }
         self.app = self.root / "kagnode/mail"
         self.app.mkdir(parents=True)
+
+    def test_missing_or_extra_native_guards_cannot_skip_checks(self):
+        for guards in ({}, {"schema": "0" * 64, "../foreign": "0" * 64}):
+            with (
+                self.subTest(guards=guards),
+                patch.dict(eco.NATIVE_PROFILES, {"mail": self.profile}),
+                patch.object(self.manager, "native_root") as native,
+                patch.object(eco.subprocess, "run") as run,
+            ):
+                state = {"native_binding": {"profile": "mail", "guards": guards}}
+                with self.assertRaisesRegex(eco.ManagerError, "guard inventory"):
+                    self.manager.apply_native("mail", self.app, self.release, state)
+                native.assert_not_called()
+                run.assert_not_called()
 
     def test_native_web_update_does_not_touch_user_data(self):
         (self.native / "private.sqlite3").write_bytes(b"keep user data")
@@ -1150,12 +1293,39 @@ class NativeAdapters(unittest.TestCase):
         )
         self.assertTrue((self.root / "opt/kagnode/mail").is_symlink())
 
-    def test_legacy_incomplete_journal_also_blocks_native_updates(self):
+    def test_false_complete_legacy_journal_requires_recovery(self):
         manager = eco.Manager(self.root / "srv/kagnode", False, system_root=self.root)
         journal = self.root / "var/lib/kagnode-migrations/ecosystem-mail.json"
-        eco.atomic(journal, {"status": "planned", "records": []})
+        for records in ([], [{"stage": "rolled-back"}], [{"stage": "complete"}]):
+            with self.subTest(records=records):
+                eco.atomic(journal, {"status": "complete", "records": records})
+                result = manager.status("mail")
+                self.assertTrue(result["needs_recovery"])
+                self.assertFalse(result["can_apply"])
+
+    def test_legacy_complete_label_cannot_hide_partial_rollback(self):
+        _, args = self.migration_fixture()
+        subprocess.run(args + ["--apply"], check=True, capture_output=True)
+        journal = self.root / "var/lib/kagnode-migrations/ecosystem-mail.json"
+        previous = json.loads(journal.read_text())
+        previous["records"][1]["stage"] = "rolled-back"
+        eco.atomic(journal, previous)
+        before = journal.read_bytes()
+        manager = eco.Manager(self.root / "srv/kagnode", False, system_root=self.root)
+        result = manager.status("mail")
+        self.assertTrue(result["needs_recovery"])
+        self.assertFalse(result["can_apply"])
+        self.assertEqual(journal.read_bytes(), before)
+
+    def test_legacy_incomplete_journal_also_blocks_native_updates(self):
+        _, args = self.migration_fixture()
+        plan = json.loads(subprocess.check_output(args))
+        plan.pop("schema", None)
+        manager = eco.Manager(self.root / "srv/kagnode", False, system_root=self.root)
+        journal = self.root / "var/lib/kagnode-migrations/ecosystem-mail.json"
+        eco.atomic(journal, plan)
         self.assertTrue(manager.status("mail")["needs_recovery"])
-        eco.atomic(journal, {"status": "complete", "records": []})
+        subprocess.run(args + ["--apply"], check=True, capture_output=True)
         self.assertFalse(manager.status("mail")["needs_recovery"])
 
     def test_migration_retains_originals_and_new_writes_on_rollback(self):

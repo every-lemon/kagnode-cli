@@ -1,5 +1,9 @@
 # 1.2.0-beta.1 — ecosystem preview
 
+## Update metadata recovery preview
+
+Read bounded, typed local metadata without following links. Report corruption without replacing files, distinguish live locks from abandoned progress, reuse migration validation for legacy status and enforce complete native guard inventories. Local manager status stays available when an operation record is damaged.
+
 ## Migration journal validation preview
 
 Validate complete migration inventories before moving files: canonical paths, stages, digests, ordering, links and saved original hashes. Reject malformed/oversized journals and journals inside moving files. Restore Mail's portal-data guard. Record rollback direction and quarantine intent so interrupted rollback can resume while preserving post-migration writes. Retain legacy journals without a schema field.
