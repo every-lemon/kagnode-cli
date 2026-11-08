@@ -1,6 +1,7 @@
 """Release selection, extraction and transitions are tested without live services."""
 
 import importlib.util
+import copy
 import io
 import json
 import os
@@ -747,6 +748,317 @@ class NativeAdapters(unittest.TestCase):
             "--destination",
             "/srv/kagnode",
         ]
+
+    def test_migration_rejects_foreign_record_before_moving_any_source(self):
+        _, args = self.migration_fixture()
+        plan = json.loads(subprocess.check_output(args))
+        unrelated = self.root / "unrelated"
+        unrelated.mkdir()
+        (unrelated / "private.fixture").write_text("not part of Mail")
+        plan["records"][1].update(
+            old="/unrelated", backup="unrelated.before-kagnode-ecosystem-mail"
+        )
+        journal = self.root / "journal.json"
+        journal.write_text(json.dumps(plan))
+        result = subprocess.run(
+            args + ["--apply", "--journal", str(journal)],
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Invalid migration journal", result.stderr)
+        self.assertFalse((self.root / "opt/kagnode/mail").is_symlink())
+        self.assertEqual(
+            (unrelated / "private.fixture").read_text(), "not part of Mail"
+        )
+
+    def test_mail_portal_guard_rejects_mixed_installation(self):
+        _, args = self.migration_fixture()
+        source = self.root / "opt/kagnode/mail"
+        (source / "PLAN.md").write_text("portal content; preserve")
+        result = subprocess.run(args + ["--apply"], capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("portal data", result.stderr)
+        self.assertFalse(source.is_symlink())
+        self.assertEqual((source / "PLAN.md").read_text(), "portal content; preserve")
+
+    def test_malformed_journals_fail_readably_without_moving_files(self):
+        _, args = self.migration_fixture()
+        plan = json.loads(subprocess.check_output(args))
+        cases = []
+        for key, values in {
+            "schema": [2, True],
+            "created": [-1, "now", True],
+            "status": ["running", {}],
+            "records": [None, {}, [], ["record"]],
+        }.items():
+            for value in values:
+                document = copy.deepcopy(plan)
+                document[key] = value
+                cases.append((key + repr(value), document))
+        for key, values in {
+            "old": ["/unrelated", "/opt/kagnode/mail/../mail", []],
+            "new": ["/unrelated", "../escape"],
+            "backup": [str(self.root / "unrelated"), "../escape"],
+            "stage": ["finished", "copying", {}],
+            "digest": ["z" * 64, 42],
+            "retained_new": ["../escape", "/absolute/path"],
+        }.items():
+            for value in values:
+                document = copy.deepcopy(plan)
+                document["records"][0][key] = value
+                cases.append((key + repr(value), document))
+        for label, records in [
+            ("duplicate", plan["records"] + [plan["records"][0]]),
+            ("missing runtime", plan["records"][1:]),
+            ("out of order", list(reversed(plan["records"]))),
+        ]:
+            document = copy.deepcopy(plan)
+            document["records"] = records
+            cases.append((label, document))
+        document = copy.deepcopy(plan)
+        document["status"] = "complete"
+        cases.append(("false completion", document))
+        cases.append(("top-level array", []))
+        raw_cases = [(label, json.dumps(doc)) for label, doc in cases]
+        raw_cases.extend(
+            [
+                ("invalid JSON", "{"),
+                ("duplicate field", '{"project":"ecosystem-mail","project":"other"}'),
+            ]
+        )
+        journal = self.root / "journal.json"
+        for label, raw in raw_cases:
+            with self.subTest(case=label):
+                journal.write_text(raw)
+                result = subprocess.run(
+                    args + ["--journal", str(journal)], capture_output=True, text=True
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Invalid migration journal", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertEqual(journal.read_text(), raw)
+                self.assertFalse((self.root / "opt/kagnode/mail").is_symlink())
+        self.assertFalse((self.root / "srv").exists())
+
+    def test_saved_inventory_mismatch_stops_before_other_records_move(self):
+        _, args = self.migration_fixture()
+        plan = json.loads(subprocess.check_output(args))
+        plan["records"][1].update(stage="ready", digest="0" * 64)
+        journal = self.root / "journal.json"
+        saved = json.dumps(plan)
+        journal.write_text(saved)
+        result = subprocess.run(
+            args + ["--apply", "--journal", str(journal)],
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("original inventory changed", result.stderr)
+        self.assertFalse((self.root / "opt/kagnode/mail").is_symlink())
+        self.assertFalse((self.root / "var/lib/kagnode/mail").is_symlink())
+        self.assertEqual(journal.read_text(), saved)
+        self.assertEqual(
+            (self.root / "var/lib/kagnode/mail/directory.sqlite3").read_text(),
+            "fixture data",
+        )
+
+    def test_backup_symlink_cannot_supply_foreign_data(self):
+        _, args = self.migration_fixture()
+        plan = json.loads(subprocess.check_output(args))
+        unrelated = self.root / "unrelated"
+        unrelated.mkdir()
+        backup = self.root / plan["records"][0]["backup"]
+        backup.symlink_to(unrelated, target_is_directory=True)
+        journal = self.root / "journal.json"
+        journal.write_text(json.dumps(plan))
+        result = subprocess.run(
+            args + ["--apply", "--journal", str(journal)],
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Invalid migration journal", result.stderr)
+        self.assertFalse((self.root / "opt/kagnode/mail").is_symlink())
+        self.assertTrue(backup.is_symlink())
+
+    def test_journal_cannot_move_with_application_or_follow_symlink_parent(self):
+        _, args = self.migration_fixture()
+        plan = json.loads(subprocess.check_output(args))
+        inside = self.root / "opt/kagnode/mail/journal.json"
+        inside.write_text(json.dumps(plan))
+        result = subprocess.run(
+            args + ["--apply", "--journal", str(inside)], capture_output=True, text=True
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("journal must remain outside", result.stderr)
+        self.assertFalse((self.root / "opt/kagnode/mail").is_symlink())
+        external = self.root / "external"
+        external.mkdir()
+        (external / "journal.json").write_text(json.dumps(plan))
+        link = self.root / "link"
+        link.symlink_to(external, target_is_directory=True)
+        result = subprocess.run(
+            args + ["--journal", str(link / "journal.json")],
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("symlink", result.stderr)
+
+    def test_nonregular_and_oversized_journals_are_rejected(self):
+        _, args = self.migration_fixture()
+        for name in ("directory", "fifo", "oversized"):
+            journal = self.root / name
+            if name == "directory":
+                journal.mkdir()
+            elif name == "fifo":
+                os.mkfifo(journal)
+            else:
+                journal.write_text(" " * (1024 * 1024) + "{}")
+            with self.subTest(kind=name):
+                result = subprocess.run(
+                    args + ["--journal", str(journal)],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("regular JSON file", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+
+    def test_unknown_destination_link_and_missing_rollback_backup_are_rejected(self):
+        _, args = self.migration_fixture()
+        subprocess.run(args + ["--apply"], check=True, capture_output=True)
+        source = self.root / "opt/kagnode/mail"
+        target = source.resolve()
+        unrelated = self.root / "unrelated"
+        unrelated.mkdir()
+        source.unlink()
+        source.symlink_to(unrelated, target_is_directory=True)
+        result = subprocess.run(args + ["--apply"], capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("source link", result.stderr)
+        source.unlink()
+        source.symlink_to(target, target_is_directory=True)
+        backup = self.root / "opt/kagnode/mail.before-kagnode-ecosystem-mail"
+        backup.rename(backup.with_name("retained-outside-journal"))
+        result = subprocess.run(args + ["--rollback"], capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("retained original is missing", result.stderr)
+        self.assertTrue(source.is_symlink())
+        self.assertTrue(target.is_dir())
+        self.assertEqual(
+            (self.root / "srv/kagnode/mail/data/directory.sqlite3").read_text(),
+            "fixture data",
+        )
+
+    def test_interrupted_rollback_resumes_without_losing_new_writes(self):
+        script, args = self.migration_fixture()
+        subprocess.run(args + ["--apply"], check=True, capture_output=True)
+        data = self.root / "srv/kagnode/mail/data"
+        (data / "new-message").write_text("keep new writes")
+        spec = importlib.util.spec_from_file_location("rollback_fixture", script)
+        migration = importlib.util.module_from_spec(spec)
+        with patch.dict(sys.modules, {"ecosystem": eco}):
+            spec.loader.exec_module(migration)
+        backup = self.root / "var/lib/kagnode/mail.before-kagnode-ecosystem-mail"
+        original_rename = Path.rename
+        child = os.fork()
+        if child == 0:
+            try:
+
+                def restore_then_kill(source, target):
+                    result = original_rename(source, target)
+                    if source == backup:
+                        os.kill(os.getpid(), signal.SIGKILL)
+                    return result
+
+                with (
+                    patch.object(sys, "argv", args[1:] + ["--rollback"]),
+                    patch.object(Path, "rename", restore_then_kill),
+                ):
+                    migration.main()
+            finally:
+                os._exit(99)
+        _, status = os.waitpid(child, 0)
+        self.assertEqual(os.waitstatus_to_exitcode(status), -signal.SIGKILL)
+        journal = self.root / "var/lib/kagnode-migrations/ecosystem-mail.json"
+        self.assertEqual(json.loads(journal.read_text())["status"], "rolling-back")
+        wrong = subprocess.run(args + ["--apply"], capture_output=True, text=True)
+        self.assertNotEqual(wrong.returncode, 0)
+        self.assertIn("resume with --rollback", wrong.stderr)
+        subprocess.run(args + ["--rollback"], check=True, capture_output=True)
+        restored = self.root / "var/lib/kagnode/mail"
+        self.assertFalse(restored.is_symlink())
+        self.assertEqual((restored / "directory.sqlite3").read_text(), "fixture data")
+        final = json.loads(journal.read_text())
+        self.assertEqual(final["status"], "rolled-back")
+        self.assertTrue(all(row["stage"] == "rolled-back" for row in final["records"]))
+        row = next(row for row in final["records"] if row["new"].endswith("/data"))
+        self.assertEqual(
+            (self.root / row["retained_new"] / "new-message").read_text(),
+            "keep new writes",
+        )
+        manager = eco.Manager(self.root / "srv/kagnode", False, system_root=self.root)
+        self.assertFalse(manager.status("mail")["needs_recovery"])
+
+    def test_rollback_collision_is_rejected_before_removing_links(self):
+        _, args = self.migration_fixture()
+        subprocess.run(args + ["--apply"], check=True, capture_output=True)
+        journal = self.root / "var/lib/kagnode-migrations/ecosystem-mail.json"
+        plan = json.loads(journal.read_text())
+        row = plan["records"][1]
+        row["retained_new"] = row["new"].lstrip("/") + ".after-migration-123"
+        retained = self.root / row["retained_new"]
+        retained.mkdir()
+        (retained / "private.fixture").write_text("retain older quarantine")
+        journal.write_text(json.dumps(plan))
+        saved = journal.read_bytes()
+        result = subprocess.run(args + ["--rollback"], capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("retained-write destination already exists", result.stderr)
+        self.assertTrue((self.root / "var/lib/kagnode/mail").is_symlink())
+        self.assertTrue((self.root / "opt/kagnode/mail").is_symlink())
+        self.assertEqual(journal.read_bytes(), saved)
+        self.assertEqual(
+            (retained / "private.fixture").read_text(), "retain older quarantine"
+        )
+
+    def test_corrupt_migration_marker_has_readable_failure(self):
+        _, args = self.migration_fixture()
+        manager = eco.Manager(self.root / "srv/kagnode", False, system_root=self.root)
+        with manager.lock("mail"):
+            marker = manager.migration_marker("mail")
+            marker.write_text("{")
+        result = subprocess.run(args + ["--apply"], capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Invalid migration journal", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertFalse((self.root / "opt/kagnode/mail").is_symlink())
+        self.assertEqual(marker.read_text(), "{")
+
+    def test_legacy_journal_without_schema_still_resumes(self):
+        _, args = self.migration_fixture()
+        plan = json.loads(subprocess.check_output(args))
+        plan.pop("schema", None)
+        journal = self.root / "legacy-journal.json"
+        journal.write_text(json.dumps(plan))
+        subprocess.run(
+            args + ["--apply", "--journal", str(journal)],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            args + ["--rollback", "--journal", str(journal)],
+            check=True,
+            capture_output=True,
+        )
+        self.assertFalse((self.root / "var/lib/kagnode/mail").is_symlink())
+        self.assertEqual(
+            (self.root / "var/lib/kagnode/mail/directory.sqlite3").read_text(),
+            "fixture data",
+        )
 
     def test_migration_preview_creates_no_locks_or_destination(self):
         _, args = self.migration_fixture()
