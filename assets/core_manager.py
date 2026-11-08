@@ -336,19 +336,103 @@ class Manager:
         return value
 
     def status(self, name):
+        # The lock, not a timestamp or a reusable PID, proves whether a writer
+        # is still alive. Nested status calls inside a mutation simply skip.
+        if (not self.trusted or os.geteuid() == 0) and read(
+            self.app(name) / "operation.json", {}
+        ).get("phase") == "downloading":
+            try:
+                with self.lock():
+                    self._recover_operation(name)
+            except OperationBusy:
+                pass
         state = self.state(name)
-        return {
+        result = {
             "enabled": True,
             **{k: v for k, v in state.items() if k not in ("uid", "gid")},
             "candidate": read(self.app(name) / "candidate.json"),
             "operation": read(self.app(name) / "operation.json", {}),
         }
+        if result["operation"].get("phase") == "interrupted":
+            result["message"] = result["operation"]["message"]
+        elif (
+            self.trusted
+            and os.geteuid() != 0
+            and result["operation"].get("phase") == "downloading"
+        ):
+            result["operation"] = {
+                **result["operation"],
+                "phase": "verification-required",
+                "message": "Run privileged Core status to verify whether this recorded operation is still active.",
+            }
+        return result
+
+    def _cleanup_staging(self):
+        """Only remove our marked scratch while holding the global lock."""
+        for path in (self.root / "releases").glob(".stage-*"):
+            marker = path / ".kagnode-stage.json"
+            if path.is_symlink() or not path.is_dir() or marker.is_symlink():
+                continue
+            try:
+                owned = read(marker)
+            except (OSError, ValueError):
+                continue
+            if owned == {"schema": 1, "kind": "ui-cache", "root": str(self.root)}:
+                shutil.rmtree(path)
+
+    def _recover_operation(self, name):
+        """Reconcile an abandoned journal; never activate or rewrite UI state."""
+        operation = self.app(name) / "operation.json"
+        pending = read(operation, {})
+        if pending.get("phase") != "downloading":
+            return
+        state = self.state(name)
+        complete = False
+        adoption_committed = pending.get("action") != "adopt" or (
+            state.get("baseline") == pending.get("version")
+            and state.get("declaration_sha256") == pending.get("declaration_sha256")
+        )
+        if pending.get("version") == state["version"] and adoption_committed:
+            try:
+                self._cached_version(state["version"])
+                complete = True
+            except (OSError, ValueError, KeyError, subprocess.SubprocessError):
+                pass
+        self._cleanup_staging()
+        if complete:
+            candidate_path = self.app(name) / "candidate.json"
+            candidate = read(candidate_path)
+            if candidate and candidate.get("version") == state["version"]:
+                atomic(candidate_path, {**candidate, "changed": False})
+        atomic(
+            operation,
+            {
+                **pending,
+                "phase": "complete" if complete else "interrupted",
+                "recovered": True,
+                "recovered_at": int(time.time()),
+                "message": "Current Core UI verified after an interrupted operation. Services were not restarted."
+                if complete
+                else "Core update was interrupted. Current UI is retained; check for updates and retry, or repeat the reviewed baseline adoption.",
+            },
+        )
+
+    def recover_pending(self):
+        try:
+            with self.lock():
+                for path in (self.root / "apps").glob("*/state.json"):
+                    self._recover_operation(path.parent.name)
+                self._cleanup_staging()
+        except OperationBusy:
+            # An independently started updater owns its journal and scratch.
+            pass
 
     def check(self, name):
         with self.lock():
             return self._check(name)
 
     def _check(self, name):
+        self._recover_operation(name)
         state = self.state(name)
         releases = json.loads(
             fetch(
@@ -470,6 +554,7 @@ class Manager:
                 operation,
                 {
                     "phase": "downloading",
+                    "action": "apply",
                     "version": candidate["version"],
                     "at": int(time.time()),
                 },
@@ -536,6 +621,10 @@ class Manager:
                 dir=self.root / "releases", prefix=".stage-"
             ) as temp:
                 stage = Path(temp)
+                atomic(
+                    stage / ".kagnode-stage.json",
+                    {"schema": 1, "kind": "ui-cache", "root": str(self.root)},
+                )
                 archive = stage / "download.tar.gz"
                 archive.write_bytes(data)
                 seen = set()
@@ -574,6 +663,7 @@ class Manager:
                     base64.b64decode(candidate["signature"])
                 )
                 stage.chmod(0o755)
+                (stage / ".kagnode-stage.json").unlink()
                 os.rename(stage, target)
         self.validate_cache(target, manifest)
         return manifest
@@ -604,6 +694,7 @@ class Manager:
     def adopt(self, name, lock_file, expected_baseline):
         """Root-reviewed application upgrade; deliberately unavailable over sockets."""
         with self.lock():
+            self._recover_operation(name)
             state = self.state(name)
             version(expected_baseline)
             if state["baseline"] != expected_baseline:
@@ -616,6 +707,8 @@ class Manager:
                 operation,
                 {
                     "phase": "downloading",
+                    "action": "adopt",
+                    "declaration_sha256": digest,
                     "version": declaration["baseline"],
                     "at": int(time.time()),
                     "message": "Verifying current and reviewed Core UI bundles",
@@ -754,6 +847,7 @@ def serve(manager, stop=None):
         raise ValueError("Unsafe Core daemon lock")
     stream = lock_path.open("a")
     fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    manager.recover_pending()
     servers = []
 
     def factory(name, account):

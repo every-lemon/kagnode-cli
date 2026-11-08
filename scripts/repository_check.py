@@ -27,8 +27,11 @@ HEADINGS = [
 
 
 def check():
-    cfg, _, _ = identity()
+    cfg, product, preview = identity()
     readme = (ROOT / "README.md").read_text()
+    expected = f"Product source: **{product}**. Packaging preview: **{preview}**."
+    if expected not in readme:
+        raise ValueError("README release status differs from the package identity")
     if re.findall(r"^## (.+)$", readme, re.M) != HEADINGS:
         raise ValueError("README sections differ from the shared template")
     files = source_files()
