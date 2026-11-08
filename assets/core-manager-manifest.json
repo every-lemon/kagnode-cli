@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "repository": "every-lemon/kagnode-core",
-  "version": "1.1.5",
-  "source_commit": "4bed28cca90a2da6e1bb4071335199a0859766ea",
+  "version": "1.2.0",
+  "source_commit": "d65fb93196bd9a331a3860fe5bc141f9f28cc982",
   "source_path": "packages/python/manager.py",
-  "sha256": "18dc824d2d0c89545a28652949ea97755a17cf9cf53961f353c8d7098635fdf7"
+  "sha256": "3267d519fa648b44053064c95c37d98e8fdee25801102432a56569aa35d344ec"
 }

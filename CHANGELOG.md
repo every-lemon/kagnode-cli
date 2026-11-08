@@ -1,5 +1,11 @@
 # 1.2.0-beta.1 — ecosystem preview
 
+## Declared Core binding preview
+
+Refresh the separately reviewed manager to Core 1.2.0 with explicit application declarations, atomic baseline adoption and verified UI rollback. The browser fallback remains on 1.0.5.
+
+Document the pinned Core baseline explicitly for new server bindings and the reviewed application-upgrade workflow. Existing application data and stable release selections remain unchanged.
+
 ## Reviewed Core manager repair preview
 
 Refresh the embedded manager to Core 1.1.5 for safe background-lock handling and structured invalid-request errors. Record the helper’s exact source commit and checksum independently from the 1.0.5 browser fallback.
