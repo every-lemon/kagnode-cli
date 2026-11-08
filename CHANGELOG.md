@@ -1,5 +1,9 @@
 # 1.2.0-beta.1 — ecosystem preview
 
+## Reviewed Core manager repair preview
+
+Refresh the embedded manager to Core 1.1.5 for safe background-lock handling and structured invalid-request errors. Record the helper’s exact source commit and checksum independently from the 1.0.5 browser fallback.
+
 ## Shared loading spinner preview
 
 Use KagNode Core 1.0.5 for the shared split-orbit loading mark, with reduced-motion support and existing status/recovery controls retained. This changes web presentation without resetting data or provisioning native services.

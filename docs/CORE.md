@@ -11,3 +11,7 @@ This preview upgrades web presentation. It does not qualify native services, cod
 ## Shared loading mark
 
 Core 1.0.5 supplies KagNode’s split-orbit spinner. The canonical logo stays still while its separated accent orbits. Reduced-motion settings stop the animation. Existing loading labels, retries and dismissal controls remain available. The server serves the spinner and artwork locally; no browser Core connection to GitHub is required.
+
+## Reviewed manager helper
+
+The bundled `kagnode core` helper is reviewed separately from browser assets. `assets/core-manager-manifest.json` records its exact public Core commit and checksum; corresponding source is retained under `vendor/core-source/packages/python/manager.py`. Manager 1.1.5 includes locking and malformed-request validation repairs. The browser fallback and automatic UI patch policy remain on the compatible 1.0.x line. Updating UI assets cannot replace this helper or restart services.

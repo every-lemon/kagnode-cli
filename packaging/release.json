@@ -4,5 +4,5 @@
   "version_pattern": "const version = \"([^\"]+)\"",
   "kind": "cli",
   "license": "AGPL-3.0-only",
-  "revision": 5
+  "revision": 6
 }

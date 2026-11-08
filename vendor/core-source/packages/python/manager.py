@@ -31,6 +31,10 @@ REPOSITORY = "every-lemon/kagnode-core"
 LIMIT = 64 * 1024 * 1024
 
 
+class OperationBusy(ValueError):
+    """A manual or background Core mutation already holds the operation lock."""
+
+
 def version(value):
     match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", str(value))
     if not match:
@@ -238,7 +242,7 @@ class Manager:
             try:
                 fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
-                raise ValueError("Another Core operation is running")
+                raise OperationBusy("Another Core operation is running")
             yield
 
     def bind(self, name, username, baseline="1.0.0"):
@@ -516,12 +520,25 @@ class Manager:
                     "changed"
                 ):
                     self.install(name, result["candidate"]["release_id"])
+            except OperationBusy:
+                # Contention is expected: the manual operation owns this state.
+                continue
             except Exception as error:
-                state = self.state(name)
-                atomic(
-                    path,
-                    {**state, "last_error": str(error), "last_check": int(time.time())},
-                )
+                try:
+                    with self.lock():
+                        state = self.state(name)
+                        atomic(
+                            path,
+                            {
+                                **state,
+                                "last_error": str(error),
+                                "last_check": int(time.time()),
+                            },
+                        )
+                except OperationBusy:
+                    # A new operation started after the failed check. Leave its
+                    # state untouched and retry at the next scheduled cycle.
+                    continue
 
 
 def serve(manager, stop=None):
@@ -561,6 +578,8 @@ def serve(manager, stop=None):
                     ):
                         raise ValueError("Invalid Core manager request")
                     data = json.loads(self.rfile.read(length))
+                    if not isinstance(data, dict):
+                        raise ValueError("Core manager requests must be JSON objects")
                     action = data.get("action")
                     if action == "status":
                         result = manager.status(name)
