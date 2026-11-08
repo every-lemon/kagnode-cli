@@ -545,40 +545,6 @@ html[data-kn-core][data-core-collapsed="true"]
 .kn-core-loading[hidden] {
   display: none;
 }
-.kn-core-loading > img {
-  width: 64px;
-  height: 64px;
-}
-.kn-core-loading-strip {
-  position: absolute;
-  inset: 0 0 auto;
-  height: 3px;
-  background: var(--kn-accent);
-  transform-origin: left;
-  animation: kn-core-progress 1.5s ease-in-out infinite;
-}
-.kn-core-loading-dots {
-  letter-spacing: 8px;
-  color: var(--kn-focus);
-  animation: kn-core-pulse 1s ease-in-out infinite alternate;
-}
-@keyframes kn-core-progress {
-  0% {
-    transform: scaleX(0.08);
-  }
-  70% {
-    transform: scaleX(0.8);
-  }
-  100% {
-    transform: scaleX(1);
-    opacity: 0.2;
-  }
-}
-@keyframes kn-core-pulse {
-  to {
-    opacity: 0.3;
-  }
-}
 html[data-kn-core]
   :is(
     .loading,
@@ -628,9 +594,7 @@ html[data-kn-core] #loading.loading {
   }
   .sidebar[data-core-sidebar],
   .kn-core-panel-divider,
-  .kn-core-rail,
-  .kn-core-loading-strip,
-  .kn-core-loading-dots {
+  .kn-core-rail {
     transition: none !important;
     animation: none !important;
   }
