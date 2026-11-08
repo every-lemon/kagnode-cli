@@ -25,7 +25,9 @@
     loading = false,
     last = 0,
     polling = null,
-    expiry = 0;
+    expiry = 0,
+    pendingAttempt = null,
+    sequence = 0;
   const panels = new Set();
   async function headers() {
     const result = { Accept: "application/json" };
@@ -51,7 +53,11 @@
         credentials: "same-origin",
         cache: "no-store",
       });
-      if (!response.ok) throw Error("Sign in locally to manage your profile.");
+      if (!response.ok) {
+        const error = Error("Sign in locally to manage your profile.");
+        error.status = response.status;
+        throw error;
+      }
       const value = await response.json();
       result["X-CSRF-Token"] = value.csrf || "";
     }
@@ -141,28 +147,62 @@
     const node = el("button", label, "kn-account-button");
     node.type = "button";
     node.addEventListener("click", async () => {
+      stopPolling();
+      const intent = sequence;
       node.disabled = true;
       const message = panel.querySelector("[role=status]");
       message.textContent = "";
       try {
         const value = await request(action, data);
-        if (value.pending) pending(panel, value);
-        else {
-          current = value;
-          render();
-          identity();
-        }
+        if (intent !== sequence || !panel.isConnected) return;
+        current = value;
+        render();
+        identity();
       } catch (error) {
+        if (intent !== sequence || !panel.isConnected) return;
         message.textContent = error.message;
+        panel.querySelector(".kn-account-actions").append(retryConnection());
       } finally {
         node.disabled = false;
       }
     });
     return node;
   };
-  function pending(panel, value) {
+  function stopPolling() {
+    sequence++;
     clearTimeout(polling);
-    expiry = Date.now() + 600000;
+    polling = null;
+  }
+  function retryConnection() {
+    const retry = el("button", "Retry account connection", "kn-account-button");
+    retry.type = "button";
+    retry.addEventListener("click", refresh);
+    return retry;
+  }
+  function connectionError(error) {
+    stopPolling();
+    mount();
+    for (const panel of panels) {
+      if (!panel.isConnected) continue;
+      const status = el("p", error.message, "kn-account-status");
+      status.setAttribute("role", "status");
+      panel.replaceChildren(
+        el("h3", "KagNode Account"),
+        status,
+        retryConnection(),
+      );
+    }
+  }
+  function pending(panel, value) {
+    stopPolling();
+    const intent = sequence;
+    const deadline =
+      Date.now() + Math.min(600, Math.max(1, value.expires_in || 600)) * 1000;
+    expiry =
+      pendingAttempt === value.attempt_id
+        ? Math.min(expiry, deadline)
+        : deadline;
+    pendingAttempt = value.attempt_id;
     const area = panel.querySelector(".kn-account-actions");
     area.replaceChildren();
     area.append(
@@ -174,8 +214,15 @@
     link.target = "_blank";
     link.rel = "noopener noreferrer";
     area.append(link);
+    area.append(
+      button("Cancel linking", "cancel", panel, {
+        attempt_id: value.attempt_id,
+      }),
+    );
     const tick = async () => {
-      if (Date.now() > expiry || !panel.isConnected) {
+      if (intent !== sequence) return;
+      if (!panel.isConnected) return;
+      if (Date.now() > expiry) {
         panel.querySelector("[role=status]").textContent = "This code expired.";
         panel
           .querySelector(".kn-account-actions")
@@ -184,6 +231,7 @@
       }
       try {
         const result = await request("poll");
+        if (intent !== sequence || !panel.isConnected) return;
         if (result.pending)
           polling = setTimeout(tick, Math.max(5, result.interval || 5) * 1000);
         else {
@@ -192,17 +240,21 @@
           identity();
         }
       } catch (error) {
+        if (intent !== sequence || !panel.isConnected) return;
         panel.querySelector("[role=status]").textContent = error.message;
-        if (error.status !== 401)
-          panel
-            .querySelector(".kn-account-actions")
-            .append(button("Start again", "start", panel));
+        if ([409, 410].includes(error.status)) return refresh();
+        panel.querySelector(".kn-account-actions").append(retryConnection());
       }
     };
-    polling = setTimeout(tick, 5000);
+    polling = setTimeout(tick, Math.max(5, value.interval || 5) * 1000);
   }
   function render() {
     if (!current) return;
+    stopPolling();
+    if (!current.pending) {
+      pendingAttempt = null;
+      expiry = 0;
+    }
     for (const panel of panels) {
       if (!panel.isConnected) {
         panels.delete(panel);
@@ -231,6 +283,8 @@
         );
       } else actions.append(button("Link KagNode Account", "start", panel));
       panel.append(actions, status);
+      if (current.pending && current.enabled && !current.connected)
+        pending(panel, current);
       if (current.warning) status.textContent = current.warning;
       if (current.admin) {
         const settings = el("div", "", "kn-account-admin");
@@ -269,7 +323,8 @@
     const shell = document.querySelector("#dashboard,#workspace");
     if (shell?.hidden) {
       current = null;
-      clearTimeout(polling);
+      pendingAttempt = null;
+      stopPolling();
       document.querySelectorAll(".kn-linked-avatar").forEach((n) => n.remove());
       return;
     }
@@ -301,20 +356,25 @@
       return;
     if (loading) return;
     loading = true;
+    const intent = sequence;
     try {
-      current = await request();
+      const value = await request();
+      if (intent !== sequence) return;
+      current = value;
       last = Date.now();
       mount();
       render();
       identity();
     } catch (error) {
+      if (intent !== sequence) return;
       if (error.status === 401) {
         current = null;
-        clearTimeout(polling);
+        stopPolling();
         document
           .querySelectorAll(".kn-linked-avatar")
           .forEach((n) => n.remove());
       }
+      connectionError(error);
     } finally {
       last = Date.now();
       loading = false;

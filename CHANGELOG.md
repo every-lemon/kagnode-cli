@@ -1,5 +1,9 @@
 # 1.2.0-beta.1 — ecosystem preview
 
+## Account panel recovery preview
+
+Show retry controls on initial profile failures and ignore late status responses after a profile or sync-policy action. The CLI continues using its existing sign-in flow; server-style device-link cancellation is not introduced.
+
 ## Interrupted Core operation recovery preview
 
 Bundle reviewed Core manager 1.2.1 with lock-proven operation recovery, offline signed-cache verification and conservative scratch cleanup. Preserve existing activation and automatic-update policy; the browser fallback stays on 1.0.5.

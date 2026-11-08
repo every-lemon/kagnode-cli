@@ -13,3 +13,7 @@ Mail administrators use the existing local administrator confirmation. Authentic
 The new issuer endpoints are POST /api/v1/account-sync/device, POST /api/v1/account-sync/token, GET /api/v1/account-sync/profile?client_id=PROJECT and POST /api/v1/account-sync/revoke. They must exist on the configured KagNode Account server before linking succeeds. Local web controls use the app's existing session/CSRF mechanisms; Media versions them under /api/v1/kagnode-account.
 
 This source preview is validated with isolated and mocked profile requests. Packaging does not deploy the updated KagNode Account server, application servers or any native service. Logos and the downloaded artwork viewer remain account-free.
+
+## Connection recovery
+
+The browser profile panel shows a retry control if status cannot load. A late status response cannot undo a newly changed sync policy. The CLI retains its existing account sign-in flow; it does not create a separate server-style device-link flow from this panel.

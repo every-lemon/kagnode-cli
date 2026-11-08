@@ -8,7 +8,7 @@ Linux terminal and browser tools for KagNode account sign-in and explicitly fict
 
 ## Release status
 
-Product source: **1.2.0-beta.1**. Packaging preview: **1.2.0-beta.1.packaging.8**.
+Product source: **1.2.0-beta.1**. Packaging preview: **1.2.0-beta.1.packaging.9**.
 
 Packaging prereleases do not change the latest stable release or establish new hardware or service compatibility. See [verification](docs/VERIFICATION.md) and [changelog](CHANGELOG.md).
 
