@@ -103,6 +103,29 @@ Successful completion or rollback clears the markers after saving the final
 journal; original data and quarantined post-migration writes remain retained.
 Do not delete a marker merely to unblock an update while copying is incomplete.
 
+Saved migration journals are validated in full before any record moves. Source,
+destination and retained-original paths must match the selected application's
+built-in layout. Records must have valid stages, ordering and inventory digests;
+unknown/duplicate records, unexpected links, missing rollback originals and
+inconsistent filesystem stages require review. Apply/rollback verifies saved
+original inventories before moving other records and prints verification progress.
+Malformed, duplicate-key, nonregular or oversized JSON fails with readable errors.
+
+Keep custom journals outside the application root and directories being moved,
+including retained originals. Use a private absolute path without symlink
+ancestors; production paths must be root-owned and not writable by other users.
+The default journal location already meets these requirements. Valid older
+journals without a schema field remain supported. Mail migration refuses trees
+containing the known portal markers, including when resuming saved records;
+rollback remains available to recover a previously mixed installation.
+
+Rollback records `rolling-back` before moving files. If interrupted, resume with
+`--rollback`; `--apply` cannot replace an unfinished rollback. Quarantine paths
+are saved before relocating post-migration writes and never overwrite an existing
+quarantine. A restored original can be recognized by its saved inventory after a
+crash. Completed rollback retains the newer writes separately and clears recovery
+markers. Do not remove recovery records to bypass failed validation.
+
 ## One-click updates for managed services
 
 Enable the panel for its actual local service account, then run the manager:
