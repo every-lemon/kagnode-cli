@@ -1,5 +1,9 @@
 # 1.2.0-beta.1 — ecosystem preview
 
+## Application activation recovery preview
+
+Persist an activation journal before managed/native code changes. Interrupted updates and failed metadata writes now require recovery review, including inactive installations; status disables further apply operations. Setup and CLI activation also respect the recovery block. Preserve data and backups without automatically rolling back databases.
+
 ## Account panel recovery preview
 
 Show retry controls on initial profile failures and ignore late status responses after a profile or sync-policy action. The CLI continues using its existing sign-in flow; server-style device-link cancellation is not introduced.

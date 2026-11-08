@@ -133,7 +133,23 @@ The manager handles one application update at a time. Graceful shutdown waits fo
 an update; restart marks interrupted work and safely replaces stale owned sockets.
 If backup fails before activation, the old service restarts. Failed activation stops
 the candidate and records recovery as required rather than automatically rewinding
-a database. Review `operation.json`, the retained release and its private backup.
+a database. Before code activation, `activation.json` is persisted alongside
+`operation.json`. An interrupted activation or failed metadata write leaves this
+marker in place, including for inactive installations and native adapters. Status
+reports `needs_recovery`, disables update availability through `can_apply`, and
+blocks installation, setup and managed CLI activation before contacting GitHub.
+
+Review both records, the selected `current` target (or native installation),
+`state.json`, service status and retained backups. The recorded installed version
+is the last saved metadata and may differ from code after an interruption. Keep
+services stopped if their health is uncertain. Repair code and metadata together
+with a verified backup; never restore a database merely to match an old version.
+Only after resolving the installation should an administrator remove
+`activation.json` and clear any `needs_recovery` state flag. There is deliberately
+no automatic acknowledgement or database rollback. A crash after successful
+activation but before journal cleanup can also require this conservative review.
+Known backup failures before activation restart the previous managed service and
+clear the marker only after that recovery succeeds.
 
 ## Verification boundaries
 

@@ -4,6 +4,7 @@ import importlib.util
 import io
 import json
 import os
+import signal
 import socket
 import subprocess
 import threading
@@ -156,6 +157,8 @@ class EcosystemTests(unittest.TestCase):
         with patch.object(eco, "request", fetch), patch.object(self.manager, "prepare"):
             result = self.manager.install("passwords", "preview", 42)
             self.assertEqual(result["installed"], "0.6")
+            self.assertFalse(result["needs_recovery"])
+            self.assertFalse((self.root / "passwords/activation.json").exists())
             root = self.root / "passwords"
             (root / "data/private.fixture").write_text("keep this data")
             before = (root / "current").resolve()
@@ -167,6 +170,146 @@ class EcosystemTests(unittest.TestCase):
             self.assertEqual(
                 (root / "data/private.fixture").read_text(), "keep this data"
             )
+
+    def test_state_write_failure_blocks_further_updates_without_network(self):
+        fetch, manifest, _ = self.fixtures()
+        with patch.object(eco, "request", fetch), patch.object(self.manager, "prepare"):
+            self.manager.install("passwords", "preview")
+        path = self.root / "passwords"
+        (path / "data/private.fixture").write_text("retain")
+        manifest["source_commit"] = "b" * 40
+        original_atomic = eco.atomic
+
+        def fail_state(target, value, *args, **kwargs):
+            if target == path / "state.json":
+                raise OSError("metadata disk full")
+            return original_atomic(target, value, *args, **kwargs)
+
+        with (
+            patch.object(eco, "request", fetch),
+            patch.object(self.manager, "prepare"),
+            patch.object(eco, "atomic", fail_state),
+        ):
+            with self.assertRaisesRegex(OSError, "metadata disk full"):
+                self.manager.install("passwords", "preview")
+        self.assertTrue(self.manager.status("passwords")["needs_recovery"])
+        self.assertFalse(self.manager.status("passwords")["can_apply"])
+        self.assertEqual((path / "data/private.fixture").read_text(), "retain")
+        with patch.object(eco, "request") as network:
+            with self.assertRaisesRegex(eco.ManagerError, "recovery review"):
+                self.manager.install("passwords", "preview")
+            network.assert_not_called()
+
+    def test_killed_activation_survives_in_a_new_manager(self):
+        fetch, manifest, _ = self.fixtures()
+        with patch.object(eco, "request", fetch), patch.object(self.manager, "prepare"):
+            self.manager.install("passwords", "preview")
+        path = self.root / "passwords"
+        old = (path / "current").resolve()
+        (path / "data/private.fixture").write_text("retain")
+        manifest["source_commit"] = "b" * 40
+        original_atomic = eco.atomic
+        child = os.fork()
+        if child == 0:
+            try:
+
+                def kill_at_metadata(target, value, *args, **kwargs):
+                    if target == path / "state.json":
+                        os.kill(os.getpid(), signal.SIGKILL)
+                    return original_atomic(target, value, *args, **kwargs)
+
+                with (
+                    patch.object(eco, "request", fetch),
+                    patch.object(self.manager, "prepare"),
+                    patch.object(eco, "atomic", kill_at_metadata),
+                ):
+                    self.manager.install("passwords", "preview")
+            finally:
+                os._exit(99)
+        _, status = os.waitpid(child, 0)
+        self.assertEqual(os.waitstatus_to_exitcode(status), -signal.SIGKILL)
+        self.assertNotEqual((path / "current").resolve(), old)
+        self.assertEqual(eco.read(path / "state.json")["source_commit"], "a" * 40)
+        restarted = eco.Manager(self.root, False)
+        self.assertTrue(restarted.status("passwords")["needs_recovery"])
+        with patch.object(eco, "request") as network:
+            with self.assertRaisesRegex(eco.ManagerError, "recovery review"):
+                restarted.install("passwords", "preview")
+            network.assert_not_called()
+        self.assertEqual((path / "data/private.fixture").read_text(), "retain")
+
+    def test_native_metadata_failure_keeps_activation_marker(self):
+        fetch, _, _ = self.fixtures()
+        with patch.object(eco, "request", fetch):
+            candidate = self.manager.check("passwords", "preview")
+        path = self.root / "mail"
+        path.mkdir(parents=True)
+        eco.atomic(path / "state.json", {"native_binding": {"profile": "mail"}})
+        original_atomic = eco.atomic
+
+        def fail_state(target, value, *args, **kwargs):
+            if target == path / "state.json":
+                raise OSError("metadata disk full")
+            return original_atomic(target, value, *args, **kwargs)
+
+        def native_apply(*args):
+            self.assertTrue((path / "activation.json").exists())
+
+        with (
+            patch.object(self.manager, "check", return_value=candidate),
+            patch.object(eco, "request", fetch),
+            patch.object(self.manager, "prepare"),
+            patch.object(self.manager, "apply_native", side_effect=native_apply),
+            patch.object(eco, "atomic", fail_state),
+        ):
+            with self.assertRaisesRegex(OSError, "metadata disk full"):
+                self.manager.install("mail", "preview")
+        self.assertTrue(self.manager.status("mail")["needs_recovery"])
+        self.assertFalse(self.manager.status("mail")["can_apply"])
+
+    def test_signed_native_failure_keeps_marker_before_running_updater(self):
+        path = self.root / "vpn"
+        path.mkdir(parents=True)
+        state = {"version": "old", "native_binding": {"profile": "vpn"}}
+        eco.atomic(path / "state.json", state)
+        data = b"mock updater; never executed"
+        candidate = {
+            "release_id": 42,
+            "version": "new",
+            "changed": True,
+            "prerelease": True,
+            "size": len(data),
+            "sha256": eco.hashlib.sha256(data).hexdigest(),
+            "url": "fixture",
+            "channel": "preview",
+        }
+
+        def fail_updater(*args, **kwargs):
+            self.assertTrue((path / "activation.json").exists())
+            raise eco.subprocess.TimeoutExpired("mock", 1800)
+
+        with (
+            patch.object(self.manager, "check", return_value=candidate),
+            patch.object(eco, "request", return_value=data),
+            patch.object(eco.subprocess, "run", side_effect=fail_updater),
+        ):
+            with self.assertRaises(eco.subprocess.TimeoutExpired):
+                self.manager.install("vpn", "preview")
+        self.assertTrue(self.manager.status("vpn")["needs_recovery"])
+        self.assertEqual(eco.read(path / "state.json"), state)
+
+    def test_recovery_blocks_setup_and_cli_activation(self):
+        for name in ("passwords", "cli"):
+            path = self.root / name
+            path.mkdir(parents=True)
+            eco.atomic(path / "state.json", {"version": "fixture"})
+            eco.atomic(path / "activation.json", {"adapter": "managed"})
+        with patch.object(self.manager, "service") as service:
+            with self.assertRaisesRegex(eco.ManagerError, "recovery review"):
+                self.manager.setup("passwords", "https://vault.example.com")
+            with self.assertRaisesRegex(eco.ManagerError, "recovery review"):
+                self.manager.activate_cli()
+            service.assert_not_called()
 
     def test_checksum_failure_never_activates(self):
         fetch, manifest, _ = self.fixtures()
@@ -219,6 +362,7 @@ class EcosystemTests(unittest.TestCase):
                 self.manager.install("passwords", "preview")
         self.assertEqual((path / "current").resolve(), old)
         self.assertEqual(service.call_args_list[-1].args, ("passwords", "start"))
+        self.assertFalse(self.manager.status("passwords")["needs_recovery"])
 
     def test_failed_health_stops_candidate_and_records_recovery(self):
         fetch, manifest, _ = self.fixtures()
