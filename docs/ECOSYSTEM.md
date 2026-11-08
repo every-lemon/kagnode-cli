@@ -85,6 +85,24 @@ silently replace new data with an older snapshot. Test the preview and backup fi
 This command is also available in the setup wizard. It has only fixture validation;
 no live Mail, VPN, HTTP Boot or user saves were migrated for this release.
 
+Consolidation now takes the same application lock as updates, plus a host-wide
+native-installation lock under `/var/lib/kagnode-migrations/`. This also prevents
+native operations targeting the same installation through different destination
+roots from overlapping. Services must still be stopped explicitly; their state is
+checked while these locks are held. Previewing a migration creates no lock or
+destination directories.
+
+Before moving files, consolidation saves a private `migration.json` marker in the
+application root and a host-wide `ecosystem-<app>.active.json` marker alongside the
+migration journal. Interrupted migrations make status require recovery and block
+updates, setup and activation. Incomplete default journals created by older CLI
+versions are also recognized. Resume with the same project, destination and
+`--journal` option (if one was supplied), or roll back that recorded migration.
+A different journal/destination cannot acknowledge the unfinished migration.
+Successful completion or rollback clears the markers after saving the final
+journal; original data and quarantined post-migration writes remain retained.
+Do not delete a marker merely to unblock an update while copying is incomplete.
+
 ## One-click updates for managed services
 
 Enable the panel for its actual local service account, then run the manager:

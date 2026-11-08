@@ -2,6 +2,7 @@
 """Explicit, journaled KagNode path migration. Dry-run by default; no service restart."""
 
 import argparse, hashlib, json, os, shutil, subprocess, time
+from ecosystem import Manager, ManagerError, atomic, read
 from pathlib import Path
 
 PROJECT = None
@@ -115,7 +116,36 @@ def main():
             )
     if not root.is_dir():
         raise RuntimeError("Root must exist.")
-    if root == Path("/") and (args.apply or args.rollback):
+
+    def local(raw):
+        p = root / raw.lstrip("/")
+        for parent in p.parents:
+            if parent == root:
+                break
+            if parent.is_symlink():
+                raise RuntimeError("Symlink parent is not allowed: " + str(parent))
+        return p
+
+    manager = Manager(local(str(args.destination)), root == Path("/"), system_root=root)
+    if args.apply or args.rollback:
+        with manager.lock(args.project) as app:
+            manager.require_recovered(
+                app, read(app / "state.json", {}), allow_migration=True
+            )
+            check_services(root)
+            migrate(args, root, local, app, manager.migration_marker(args.project))
+    else:
+        migrate(
+            args,
+            root,
+            local,
+            manager.project(args.project)[1],
+            manager.migration_marker(args.project),
+        )
+
+
+def check_services(root):
+    if root == Path("/"):
         if os.geteuid() != 0:
             raise RuntimeError("Root is required for a system migration.")
         active = [
@@ -129,18 +159,22 @@ def main():
                 "Stop these services before migration: " + ", ".join(active)
             )
 
-    def local(raw):
-        p = root / raw.lstrip("/")
-        for parent in p.parents:
-            if parent == root:
-                break
-            if parent.is_symlink():
-                raise RuntimeError("Symlink parent is not allowed: " + str(parent))
-        return p
 
+def migrate(args, root, local, app, shared_marker):
     journal = args.journal or local("/var/lib/kagnode-migrations/" + PROJECT + ".json")
     if journal.is_symlink():
         raise RuntimeError("Journal must not be a symlink.")
+    marker = app / "migration.json"
+    identity = {
+        "project": PROJECT,
+        "journal": str(journal.absolute()),
+        "destination": str(args.destination),
+    }
+    for candidate in (marker, shared_marker):
+        if candidate.exists() and read(candidate) != identity:
+            raise RuntimeError(
+                "Unfinished migration belongs to another journal or destination. Resume or roll back its recorded journal first."
+            )
     if journal.exists():
         data = json.loads(journal.read_text())
         if (
@@ -223,15 +257,17 @@ def main():
     journal.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
 
     def save():
-        temp = journal.with_suffix(".tmp")
-        temp.write_text(json.dumps(data, indent=2) + "\n")
-        temp.chmod(0o600)
-        os.replace(temp, journal)
+        atomic(journal, data)
+        Manager.sync_directory(journal.parent)
 
     if data["status"] == "rolled-back" and not args.rollback:
         raise RuntimeError(
             "This journal has been rolled back. Archive it before planning a new migration."
         )
+    atomic(shared_marker, identity)
+    Manager.sync_directory(shared_marker.parent)
+    atomic(marker, identity)
+    Manager.sync_directory(app)
     save()
     for record in reversed(data["records"]) if args.rollback else data["records"]:
         src, dst = local(record["old"]), local(record["new"])
@@ -326,6 +362,10 @@ def main():
             save()
     data["status"] = "rolled-back" if args.rollback else "complete"
     save()
+    marker.unlink()
+    Manager.sync_directory(app)
+    shared_marker.unlink()
+    Manager.sync_directory(shared_marker.parent)
     print(
         "Migration "
         + data["status"]
@@ -336,5 +376,10 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except (RuntimeError, OSError, subprocess.CalledProcessError) as error:
+    except (
+        ManagerError,
+        RuntimeError,
+        OSError,
+        subprocess.CalledProcessError,
+    ) as error:
         raise SystemExit(str(error))

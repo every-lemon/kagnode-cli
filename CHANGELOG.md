@@ -1,5 +1,9 @@
 # 1.2.0-beta.1 — ecosystem preview
 
+## Consolidation/update coordination preview
+
+Share native and application locks between consolidation and updates, including separate destination roots on the same host. Persist migration recovery markers before moving files, block updates after interrupted migrations, and allow only the recorded migration journal to resume or roll back. Preview remains read-only; retained originals and post-migration writes are preserved.
+
 ## Application activation recovery preview
 
 Persist an activation journal before managed/native code changes. Interrupted updates and failed metadata writes now require recovery review, including inactive installations; status disables further apply operations. Setup and CLI activation also respect the recovery block. Preserve data and backups without automatically rolling back databases.

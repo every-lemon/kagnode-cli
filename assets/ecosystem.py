@@ -260,9 +260,12 @@ def validate_root(root, privileged=False):
 
 
 class Manager:
-    def __init__(self, root, require_root=True):
+    def __init__(self, root, require_root=True, system_root=None):
         self.root = validate_root(root, require_root)
         self.require_root = require_root
+        # Production roots share native installations. Tests may explicitly
+        # scope that host-wide lock beneath a disposable filesystem root.
+        self.system_root = Path("/") if require_root else system_root
 
     def project(self, name):
         if name == "authenticator":
@@ -285,6 +288,7 @@ class Manager:
             "candidate.json",
             "operation.json",
             "activation.json",
+            "migration.json",
             ".lock",
             "config",
             "releases",
@@ -297,6 +301,61 @@ class Manager:
 
         return name, path
 
+    def migration_marker(self, name):
+        if self.system_root is None or name not in NATIVE_PROFILES:
+            return None
+        marker = (
+            Path(self.system_root)
+            / "var/lib/kagnode-migrations"
+            / ("ecosystem-" + name + ".active.json")
+        )
+        if marker.is_symlink():
+            raise ManagerError("Migration recovery marker must not be a symlink.")
+        return marker
+
+    def migration_pending(self, path):
+        if (path / "migration.json").exists():
+            return True
+        marker = self.migration_marker(path.name)
+        if marker is None:
+            return False
+        if marker.exists():
+            return True
+        # Also recognize journals created before shared recovery markers existed.
+        journal = marker.with_name("ecosystem-" + path.name + ".json")
+        try:
+            previous = read(journal)
+            return previous is not None and previous.get("status") not in (
+                "complete",
+                "rolled-back",
+            )
+        except (OSError, ValueError, AttributeError):
+            return True
+
+    @contextlib.contextmanager
+    def native_lock(self, name):
+        if self.system_root is None or name not in NATIVE_PROFILES:
+            yield
+            return
+        directory = validate_root(
+            Path(self.system_root) / "var/lib/kagnode-migrations", self.require_root
+        )
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        lock_path = directory / ("ecosystem-" + name + ".lock")
+        if lock_path.exists():
+            validate_root(lock_path, self.require_root)
+        descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+        try:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise ManagerError(
+                    "Another operation is already using this native installation."
+                )
+            yield
+        finally:
+            os.close(descriptor)
+
     @contextlib.contextmanager
     def lock(self, name):
         if self.require_root and os.geteuid() != 0:
@@ -308,7 +367,7 @@ class Manager:
         path.mkdir(exist_ok=True, mode=0o755)
         self.root.chmod(0o755)
         path.chmod(0o755)
-        with (path / ".lock").open("a") as stream:
+        with self.native_lock(name), (path / ".lock").open("a") as stream:
             try:
                 fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
@@ -321,6 +380,11 @@ class Manager:
         name, path = self.project(name)
         try:
             state = read(path / "state.json", {})
+            recovery = bool(
+                state.get("needs_recovery")
+                or (path / "activation.json").exists()
+                or self.migration_pending(path)
+            )
         except PermissionError:
             return {
                 "id": name,
@@ -329,16 +393,13 @@ class Manager:
                 "message": "Use sudo to inspect this installation's private status.",
                 "can_apply": False,
             }
-        recovery = bool(
-            state.get("needs_recovery") or (path / "activation.json").exists()
-        )
         return {
             "id": name,
             **CATALOG[name],
             "root": str(path),
             "needs_recovery": recovery,
             "recovery": (
-                "An update may have changed code without completing metadata or health checks. Review activation.json, operation.json and backups before continuing."
+                "An update or migration needs recovery review. Check activation.json, migration.json, operation.json and retained backups before continuing."
                 if recovery
                 else None
             ),
@@ -478,11 +539,14 @@ class Manager:
         (path / "activation.json").unlink(missing_ok=True)
         self.sync_directory(path)
 
-    @staticmethod
-    def require_recovered(path, state):
-        if state.get("needs_recovery") or (path / "activation.json").exists():
+    def require_recovered(self, path, state, allow_migration=False):
+        if (
+            state.get("needs_recovery")
+            or (path / "activation.json").exists()
+            or (not allow_migration and self.migration_pending(path))
+        ):
             raise ManagerError(
-                "This installation needs recovery review before another update or activation. Inspect activation.json, operation.json and the retained backup."
+                "This installation needs recovery review before another update or activation. Inspect activation.json, migration.json, operation.json and the retained backup."
             )
 
     def install(self, name, channel="stable", release_id=None):
@@ -1606,7 +1670,11 @@ def main():
     p.add_argument("--port", type=int, default=8816)
     p.add_argument("--apply", action="store_true")
     args = parser.parse_args()
-    manager = Manager(args.root, args.command not in ("list", "status", "check"))
+    manager = Manager(
+        args.root,
+        args.command not in ("list", "status", "check"),
+        system_root=Path("/"),
+    )
     if args.command == "list":
         result = [manager.status(name) for name in CATALOG]
     elif args.command == "consolidate":

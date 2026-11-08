@@ -5,6 +5,7 @@ import io
 import json
 import os
 import signal
+import sys
 import socket
 import subprocess
 import threading
@@ -310,6 +311,14 @@ class EcosystemTests(unittest.TestCase):
             with self.assertRaisesRegex(eco.ManagerError, "recovery review"):
                 self.manager.activate_cli()
             service.assert_not_called()
+
+    def test_unreadable_host_migration_status_is_not_reported_safe(self):
+        with patch.object(
+            self.manager, "migration_pending", side_effect=PermissionError
+        ):
+            status = self.manager.status("mail")
+        self.assertFalse(status["can_apply"])
+        self.assertIn("sudo", status["message"])
 
     def test_checksum_failure_never_activates(self):
         fetch, manifest, _ = self.fixtures()
@@ -720,6 +729,122 @@ class NativeAdapters(unittest.TestCase):
             with self.assertRaises(eco.subprocess.CalledProcessError):
                 self.manager.apply_native("mail", self.app, self.release, self.state)
         self.assertEqual((self.native / "web/app.py").read_text(), "old web")
+
+    def migration_fixture(self):
+        source = self.root / "opt/kagnode/mail/kagnode"
+        source.mkdir(parents=True)
+        (source / "web.py").write_text("identity fixture")
+        data = self.root / "var/lib/kagnode/mail"
+        data.mkdir(parents=True)
+        (data / "directory.sqlite3").write_text("fixture data")
+        script = Path(__file__).resolve().parents[1] / "assets/consolidate.py"
+        return script, [
+            "python3",
+            str(script),
+            "mail",
+            "--root",
+            str(self.root),
+            "--destination",
+            "/srv/kagnode",
+        ]
+
+    def test_migration_preview_creates_no_locks_or_destination(self):
+        _, args = self.migration_fixture()
+        subprocess.run(args, check=True, capture_output=True)
+        self.assertFalse((self.root / "srv").exists())
+        self.assertFalse((self.root / "var/lib/kagnode-migrations").exists())
+        self.assertFalse((self.root / "opt/kagnode/mail").is_symlink())
+
+    def test_migration_rejects_running_update_before_moving_files(self):
+        _, args = self.migration_fixture()
+        manager = eco.Manager(self.root / "srv/kagnode", False)
+        with manager.lock("mail"):
+            result = subprocess.run(args + ["--apply"], capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Another operation", result.stderr)
+        self.assertFalse((self.root / "opt/kagnode/mail").is_symlink())
+        self.assertEqual(
+            (self.root / "var/lib/kagnode/mail/directory.sqlite3").read_text(),
+            "fixture data",
+        )
+
+    def test_migration_rejects_unresolved_update_recovery(self):
+        _, args = self.migration_fixture()
+        manager = eco.Manager(self.root / "srv/kagnode", False)
+        with manager.lock("mail") as path:
+            eco.atomic(path / "activation.json", {"adapter": "native-web"})
+        result = subprocess.run(args + ["--apply"], capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("recovery review", result.stderr)
+        self.assertFalse((self.root / "opt/kagnode/mail").is_symlink())
+
+    def test_native_lock_is_shared_across_destination_roots(self):
+        _, args = self.migration_fixture()
+        other = eco.Manager(self.root / "other/root", False, system_root=self.root)
+        with other.lock("mail"):
+            result = subprocess.run(args + ["--apply"], capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Another operation", result.stderr)
+        self.assertFalse((self.root / "opt/kagnode/mail").is_symlink())
+
+    def test_killed_migration_blocks_updates_then_resumes_without_data_loss(self):
+        script, args = self.migration_fixture()
+        spec = importlib.util.spec_from_file_location("consolidation_fixture", script)
+        migration = importlib.util.module_from_spec(spec)
+        with patch.dict(sys.modules, {"ecosystem": eco}):
+            spec.loader.exec_module(migration)
+        child = os.fork()
+        if child == 0:
+            try:
+
+                def kill_before_copy(command, **kwargs):
+                    if command[0] == "cp":
+                        os.kill(os.getpid(), signal.SIGKILL)
+                    raise AssertionError(
+                        "Unexpected process in isolated migration fixture"
+                    )
+
+                with (
+                    patch.object(sys, "argv", args[1:] + ["--apply"]),
+                    patch.object(eco.subprocess, "run", side_effect=kill_before_copy),
+                ):
+                    migration.main()
+            finally:
+                os._exit(99)
+        _, status = os.waitpid(child, 0)
+        self.assertEqual(os.waitstatus_to_exitcode(status), -signal.SIGKILL)
+        manager = eco.Manager(self.root / "srv/kagnode", False, system_root=self.root)
+        self.assertTrue(manager.status("mail")["needs_recovery"])
+        self.assertFalse(manager.status("mail")["can_apply"])
+        other = eco.Manager(self.root / "other/root", False, system_root=self.root)
+        self.assertTrue(other.status("mail")["needs_recovery"])
+        with patch.object(eco, "request") as network:
+            with self.assertRaisesRegex(eco.ManagerError, "recovery review"):
+                other.install("mail", "preview")
+            network.assert_not_called()
+        wrong = subprocess.run(
+            args + ["--apply", "--journal", str(self.root / "other-journal.json")],
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(wrong.returncode, 0)
+        self.assertIn("another journal", wrong.stderr)
+        subprocess.run(args + ["--apply"], check=True, capture_output=True)
+        self.assertFalse(manager.status("mail")["needs_recovery"])
+        self.assertFalse(other.status("mail")["needs_recovery"])
+        self.assertEqual(
+            (self.root / "srv/kagnode/mail/data/directory.sqlite3").read_text(),
+            "fixture data",
+        )
+        self.assertTrue((self.root / "opt/kagnode/mail").is_symlink())
+
+    def test_legacy_incomplete_journal_also_blocks_native_updates(self):
+        manager = eco.Manager(self.root / "srv/kagnode", False, system_root=self.root)
+        journal = self.root / "var/lib/kagnode-migrations/ecosystem-mail.json"
+        eco.atomic(journal, {"status": "planned", "records": []})
+        self.assertTrue(manager.status("mail")["needs_recovery"])
+        eco.atomic(journal, {"status": "complete", "records": []})
+        self.assertFalse(manager.status("mail")["needs_recovery"])
 
     def test_migration_retains_originals_and_new_writes_on_rollback(self):
         import subprocess
