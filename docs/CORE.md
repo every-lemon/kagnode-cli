@@ -14,7 +14,7 @@ Core 1.0.5 supplies KagNode’s split-orbit spinner. The canonical logo stays st
 
 ## Reviewed manager helper
 
-The bundled `kagnode core` helper is reviewed separately from browser assets. `assets/core-manager-manifest.json` records its exact public Core commit and checksum; corresponding source is retained under `vendor/core-source/packages/python/manager.py`. Manager 1.2.0 includes locking, request validation and explicit reviewed baseline-adoption controls. The browser fallback and automatic UI patch policy remain on the compatible 1.0.x line. Updating UI assets cannot replace this helper or restart services.
+The bundled `kagnode core` helper is reviewed separately from browser assets. `assets/core-manager-manifest.json` records its exact public Core commit and checksum; corresponding source is retained under `vendor/core-source/packages/python/manager.py`. Manager 1.2.1 includes locking, request validation, explicit reviewed baseline-adoption controls and offline recovery of abandoned operation journals. Recovery preserves activation and policy and only removes ownership-marked staging files. The browser fallback and automatic UI patch policy remain on the compatible 1.0.x line. Updating UI assets cannot replace this helper or restart services.
 
 ## Binding and reviewed application upgrades
 

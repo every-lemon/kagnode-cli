@@ -1,5 +1,9 @@
 # 1.2.0-beta.1 — ecosystem preview
 
+## Interrupted Core operation recovery preview
+
+Bundle reviewed Core manager 1.2.1 with lock-proven operation recovery, offline signed-cache verification and conservative scratch cleanup. Preserve existing activation and automatic-update policy; the browser fallback stays on 1.0.5.
+
 ## Declared Core binding preview
 
 Refresh the separately reviewed manager to Core 1.2.0 with explicit application declarations, atomic baseline adoption and verified UI rollback. The browser fallback remains on 1.0.5.
