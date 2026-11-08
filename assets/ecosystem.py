@@ -284,6 +284,7 @@ class Manager:
             "state.json",
             "candidate.json",
             "operation.json",
+            "activation.json",
             ".lock",
             "config",
             "releases",
@@ -328,18 +329,30 @@ class Manager:
                 "message": "Use sudo to inspect this installation's private status.",
                 "can_apply": False,
             }
+        recovery = bool(
+            state.get("needs_recovery") or (path / "activation.json").exists()
+        )
         return {
             "id": name,
             **CATALOG[name],
             "root": str(path),
+            "needs_recovery": recovery,
+            "recovery": (
+                "An update may have changed code without completing metadata or health checks. Review activation.json, operation.json and backups before continuing."
+                if recovery
+                else None
+            ),
             "installed": state.get("version"),
             "active": state.get("active", False),
             "channel": state.get("channel", "stable"),
             "operation": read(path / "operation.json", {}),
             "candidate": read(path / "candidate.json", None),
             "adapter": state.get("adapter", "managed"),
-            "can_apply": CATALOG[name]["kind"] not in ("native", "signed-native")
-            or bool(state.get("native_binding")),
+            "can_apply": not recovery
+            and (
+                CATALOG[name]["kind"] not in ("native", "signed-native")
+                or bool(state.get("native_binding"))
+            ),
         }
 
     def check(self, name, channel=None):
@@ -438,20 +451,51 @@ class Manager:
         atomic(path / "operation.json", value)
         print(json.dumps(value), flush=True)
 
+    def begin_activation(self, path, candidate, adapter):
+        # Persist before any service/code mutation. A killed process or failed
+        # metadata write must not make a partially applied release look safe.
+        atomic(
+            path / "activation.json",
+            {
+                "adapter": adapter,
+                "version": candidate["version"],
+                "source_commit": candidate.get("source_commit"),
+                "started": int(time.time()),
+            },
+        )
+        self.sync_directory(path)
+
+    @staticmethod
+    def sync_directory(path):
+        descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+    def finish_activation(self, path):
+        self.sync_directory(path)
+        (path / "activation.json").unlink(missing_ok=True)
+        self.sync_directory(path)
+
+    @staticmethod
+    def require_recovered(path, state):
+        if state.get("needs_recovery") or (path / "activation.json").exists():
+            raise ManagerError(
+                "This installation needs recovery review before another update or activation. Inspect activation.json, operation.json and the retained backup."
+            )
+
     def install(self, name, channel="stable", release_id=None):
         name, path = self.project(name)
         with self.lock(name):
+            existing = read(path / "state.json", {})
+            self.require_recovered(path, existing)
             candidate = self.check(name, channel)
             if not candidate.get("release_id"):
                 raise ManagerError(candidate["message"])
             if release_id is not None and candidate["release_id"] != release_id:
                 raise ManagerError(
                     "The release changed since review. Check again before installing."
-                )
-            existing = read(path / "state.json", {})
-            if existing.get("needs_recovery"):
-                raise ManagerError(
-                    "This installation needs recovery review before another update. Inspect operation.json and the retained backup."
                 )
             if name == "vpn" and existing.get("native_binding"):
                 return self.update_vpn(path, candidate, existing)
@@ -522,6 +566,7 @@ class Manager:
                 )
                 self.prepare(name, path, release)
                 if existing.get("native_binding"):
+                    self.begin_activation(path, candidate, "native-web")
                     self.apply_native(name, path, release, existing)
                     atomic(
                         path / "state.json",
@@ -537,6 +582,7 @@ class Manager:
                         "complete",
                         "Compatible native web application updated; system configuration retained",
                     )
+                    self.finish_activation(path)
                     return self.status(name)
                 old = (
                     (path / "current").resolve()
@@ -549,9 +595,10 @@ class Manager:
                     )
                 active = existing.get("active", False)
                 activated = False
-                if active:
-                    self.service(name, "stop")
+                self.begin_activation(path, candidate, "managed")
                 try:
+                    if active:
+                        self.service(name, "stop")
                     self.backup(path)
                     target = path / ".current-next"
                     target.unlink(missing_ok=True)
@@ -588,6 +635,8 @@ class Manager:
                                     "needs_recovery": True,
                                 },
                             )
+                    if not activated:
+                        self.finish_activation(path)
                     raise
                 self.operation(
                     path,
@@ -599,6 +648,7 @@ class Manager:
                         else "; setup is available in the CLI"
                     ),
                 )
+                self.finish_activation(path)
                 return self.status(name)
             except Exception as error:
                 self.operation(
@@ -735,6 +785,7 @@ class Manager:
         script.chmod(0o600)
         self.operation(path, "preparing", "Applying the verified native VPN updater")
         log = path / "native-update.log"
+        self.begin_activation(path, candidate, "signed-native")
         with log.open("a") as output:
             os.chmod(log, 0o600)
             subprocess.run(
@@ -756,6 +807,7 @@ class Manager:
             {**state, "version": actual, "channel": candidate["channel"]},
         )
         self.operation(path, "complete", "Signed VPN update completed")
+        self.finish_activation(path)
         return self.status("vpn")
 
     def bind_native(self, name, channel="stable"):
@@ -765,6 +817,7 @@ class Manager:
         profile = NATIVE_PROFILES[name]
         with self.lock(name) as path:
             current = read(path / "state.json", {})
+            self.require_recovered(path, current)
             if current.get("native_binding"):
                 raise ManagerError("Native installation already bound.")
             native = self.native_root(name)
@@ -1042,6 +1095,7 @@ class Manager:
             )
         with self.lock(name):
             state = read(path / "state.json", {})
+            self.require_recovered(path, state)
             if not state.get("version"):
                 raise ManagerError("Install a release before setup.")
             if state.get("active"):
@@ -1139,6 +1193,7 @@ class Manager:
     def activate_cli(self):
         """Opt-in PATH activation; never replace a package-owned executable."""
         with self.lock("cli") as path:
+            self.require_recovered(path, read(path / "state.json", {}))
             current = path / "current"
             binary = current / "kagnode"
             if (
