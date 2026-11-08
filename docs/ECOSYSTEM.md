@@ -216,3 +216,14 @@ profile client IDs, native package names and existing vault paths stay compatibl
 Status reports `metadata_errors` with filenames and keeps update actions disabled until records are repaired. Local metadata must be bounded JSON objects with valid field types and no duplicate keys. Files are opened without following symlinks or blocking on pipes. A null candidate cache remains valid when no compatible release exists. Corrupt files are never silently reset. An explicit release check can replace a damaged candidate cache; restore installation or operation records only after reviewing retained code/data and backups.
 
 The manager remains available for diagnostic status when an operation record is damaged. It reports `in_progress` from real application/native locks, so active work is distinct from abandoned journals or stale phase text. A restart does not mark a separately running CLI operation interrupted. Legacy migration completion labels are checked against the shared migration validator, including record consistency and filesystem state. Missing or extra native guard entries block the adapter before native files or services are touched.
+
+## Damaged lock controls
+
+Application, native and daemon control locks must be regular single-link files.
+They are opened without following symlinks or blocking on pipes; privileged
+operations also require root ownership and no group/other write access. New
+locks use mode 0600. Valid older root-owned locks are hardened in place during
+mutation, preserving their inode and bytes so existing contention still works.
+Status probes never chmod or replace a lock. Damaged controls produce recovery
+diagnostics and disable apply; review them deliberately instead of deleting a
+lock that another operation may still hold.
