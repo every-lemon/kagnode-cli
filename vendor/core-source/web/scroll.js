@@ -7,6 +7,7 @@
     forced = matchMedia("(forced-colors: active)");
   let frame = 0,
     scanning = 0,
+    pendingScans = new Set(),
     serial = 0,
     mode = "custom",
     covered = false;
@@ -176,20 +177,41 @@
     regions.delete(el);
   }
   function scan(container = document) {
-    scanning = 0;
     for (const [el, state] of regions)
       if (!el.isConnected || !active()) remove(el, state);
     if (active()) {
       mount(root);
-      const nodes = container.querySelectorAll?.("*") || [];
+      const ancestors = [];
+      for (
+        let parent = container.parentElement;
+        parent;
+        parent = parent.parentElement
+      )
+        ancestors.push(parent);
+      const nodes = [
+        container,
+        ...ancestors,
+        ...(container.querySelectorAll?.("*") || []),
+      ];
       for (const el of nodes)
         if (
-          !el.closest(".kn-core-rail") &&
+          !el.closest?.(".kn-core-rail") &&
           (eligible(el, "y") || eligible(el, "x"))
         )
           mount(el);
     }
     schedule();
+  }
+  function requestScan(container = document) {
+    if (container === document) pendingScans.clear();
+    if (!pendingScans.has(document)) pendingScans.add(container);
+    if (!scanning)
+      scanning = requestAnimationFrame(() => {
+        scanning = 0;
+        const containers = [...pendingScans];
+        pendingScans.clear();
+        for (const node of containers) scan(node);
+      });
   }
   function schedule() {
     if (!frame) frame = requestAnimationFrame(paint);
@@ -303,7 +325,9 @@
       )
     )
       return;
-    if (!scanning) scanning = setTimeout(() => scan(), 100);
+    for (const record of records) {
+      if (!record.target.closest?.(".kn-core-rail")) requestScan(record.target);
+    }
   });
   observer.observe(document.body, { childList: true, subtree: true });
   addEventListener("resize", schedule, { passive: true });
@@ -323,7 +347,7 @@
   forced.addEventListener("change", () => scan());
   window.KagNodeScroll = {
     core: true,
-    refresh: () => scan(),
+    refresh: (container) => requestScan(container || document),
     stop() {},
     get mode() {
       return mode;
@@ -340,6 +364,10 @@
     },
     destroy() {
       observer.disconnect();
+      cancelAnimationFrame(scanning);
+      cancelAnimationFrame(frame);
+      pendingScans.clear();
+      resize.disconnect();
       for (const [el, state] of regions) remove(el, state);
     },
   };

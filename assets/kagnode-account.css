@@ -119,40 +119,9 @@
 }
 
 .kn-cli-profile {
+  display: flex;
+  justify-content: flex-end;
   position: relative;
   margin-left: auto;
   font: 12px/1.5 system-ui;
-}
-.kn-cli-profile > summary {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 7px 12px;
-  border: 1px solid #8885;
-  border-radius: 12px;
-  cursor: pointer;
-  list-style: none;
-}
-.kn-cli-profile > summary::-webkit-details-marker {
-  display: none;
-}
-.kn-cli-preferences {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 10px);
-  width: min(470px, 90vw);
-  max-height: 75dvh;
-  overflow: auto;
-  padding: 20px;
-  background: var(--surface, #191919);
-  color: var(--text, #eee);
-  border: 1px solid #8885;
-  border-radius: 18px;
-  z-index: 30;
-}
-.kn-cli-profile summary [data-kn-account-name] {
-  max-width: 130px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }

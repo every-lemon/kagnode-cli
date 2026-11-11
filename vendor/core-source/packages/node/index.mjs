@@ -82,6 +82,7 @@ const escape = (v) =>
     .replaceAll('"', "&quot;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
+export const iconSources = Object.freeze({ ...(BUNDLE.icon_sources || {}) });
 export const iconLibrary = Object.keys(BUNDLE.icons || {})
   .sort()
   .map((name) => ({
@@ -97,7 +98,7 @@ export function icon(name) {
     escape(name) +
     '"' +
     (name === "chevron" ? " data-disclosure-icon" : "") +
-    ' width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' +
+    ' width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' +
     shape +
     "</svg>"
   );
@@ -164,7 +165,12 @@ export function installCore(
     }
     const send = r.send;
     r.send = function (body) {
-      if (typeof body === "string" && /<head\b/i.test(body)) {
+      const contentType = this.get?.("Content-Type") || "";
+      if (
+        typeof body === "string" &&
+        (!contentType || /^text\/html(?:;|$)/i.test(contentType)) &&
+        /<head\b/i.test(body)
+      ) {
         const c = context(q, r);
         body = inject(body, appId, c);
         this.set(

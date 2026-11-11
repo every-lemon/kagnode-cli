@@ -8,6 +8,7 @@ export interface CoreContext {
 export interface CoreManifest {
   version: string;
   ui_api: number;
+  icon_sources?: Record<string, string>;
   entrypoints: Record<string, string>;
   files: Record<string, { sha256: string; size: number; data?: string }>;
 }
@@ -31,6 +32,7 @@ export function managerRequest(
   action?: string,
   data?: Record<string, unknown>,
 ): Promise<any>;
+export const iconSources: Readonly<Record<string, string>>;
 export const iconLibrary: { name: string; label: string }[];
 export function icon(name: string): string;
 

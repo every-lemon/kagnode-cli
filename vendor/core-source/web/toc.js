@@ -83,7 +83,7 @@
         if (state.current !== link || state.size !== size) {
           const focus =
             list.contains(document.activeElement) &&
-            document.activeElement.matches("a:focus-visible");
+            document.activeElement.matches(":focus-visible");
           if (!focus || document.activeElement === link) center(list, link);
         }
       } else list.removeAttribute("tabindex");

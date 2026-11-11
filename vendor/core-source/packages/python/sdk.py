@@ -272,3 +272,16 @@ def render_template(name, slots=None):
     return re.sub(
         r"\{\{([a-z]+)\}\}", lambda m: str((slots or {}).get(m[1], "")), TEMPLATES[name]
     )
+
+
+def icon(name):
+    """Render a decorative, selected Core component glyph; never arbitrary SVG."""
+    icons = BUNDLE.get("icons", {})
+    key = name if name in icons else "plan"
+    return (
+        '<svg class="ui-icon" data-core-icon-name="'
+        + html.escape(key, quote=True)
+        + '" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">'
+        + icons.get(key, "")
+        + "</svg>"
+    )

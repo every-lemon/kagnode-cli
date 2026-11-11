@@ -59,5 +59,6 @@
   "cursor": "<path d=\"m4 3 6 18 3-8 8-3Z\"/>",
   "info": "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 11v6m0-10h.01\"/>",
   "refresh": "<path d=\"M20 8a8 8 0 0 0-13-3L3 9m0-6v6h6m-5 7a8 8 0 0 0 13 3l4-4m0 6v-6h-6\"/>",
-  "print": "<path d=\"M7 8V3h10v5M7 17H3V8h18v9h-4M7 14h10v7H7Zm10-3h.01\"/>"
+  "print": "<path d=\"M7 8V3h10v5M7 17H3V8h18v9h-4M7 14h10v7H7Zm10-3h.01\"/>",
+  "lightbulb": "<path d=\"M9 18v-2a7 7 0 1 1 6 0v2ZM9 21h6M10 18h4\"/>"
 }

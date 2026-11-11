@@ -1,5 +1,15 @@
 # 1.2.0-beta.1 — ecosystem preview
 
+## 5.0.0
+
+- Align the CLI on the coordinated stable KagNode version line; preserve package names, XDG credentials and installation roots.
+- Bundle exact reviewed Core 5 account menus, navigation, controls and original action icons, served locally with offline fallbacks.
+- Retain keyboard-only setup and explicit central KagNode login; cloud examples remain fictional and managed applications keep independent qualification.
+
+## Shared account interface preview
+
+Use the reviewed Core 1.3.1 browser fallback and compatible patch line. Build all example account controls from the canonical Core template, keep synced identity inside the opened avatar menu and retain appearance/profile preferences. Keep popovers inside the viewport and dismiss them when a demo iframe receives focus. Select manager patches from the application baseline instead of hardcoding 1.0.x; old or incompatible bindings fall back to the bundled UI. Existing real central account login, offline fictional examples, credentials and separately reviewed manager helper are preserved.
+
 ## Control lock validation preview
 
 Open application, native and daemon locks without blocking on special files. Reject nonregular, linked, foreign-owned or writable control files before locking or changing permissions; preserve existing contents and inodes. Read-only probes report damaged controls as recovery errors instead of enabling updates. Existing lock contention remains enforced.

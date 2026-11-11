@@ -14,5 +14,12 @@
     "path": "assets/icons.json",
     "origin": "Extracted KagNode application icon paths",
     "license": "AGPL-3.0-only"
+  },
+  "original_ui_icons": {
+    "path": "assets/icon-library/source.mjs",
+    "origin": "Original KagNode Core 24-unit outline UI geometry; no third-party icon library or brand marks",
+    "count": 320,
+    "license": "AGPL-3.0-only",
+    "documentation": "docs/ICONS.md"
   }
 }

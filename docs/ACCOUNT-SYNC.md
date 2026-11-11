@@ -1,19 +1,21 @@
-# Optional KagNode Account profiles
+# KagNode Account in the CLI
 
-Sign in to the application locally, then open Account/Settings preferences and choose Link KagNode Account. Open the displayed KagNode address, compare the code and approve the specific installation. Only your display name, stable profile identifier and photo are shared. Email addresses, passwords, mailbox access, vault encryption and local administrator roles stay separate. Accounts are never matched automatically by email.
+Run `kagnode login` (or `/login` in the keyboard interface) to log in with KagNode. The command opens the central KagNode sign-in and approval journey: compare the displayed code and approve only your own request. Signup and MFA remain on KagNode's account service. The CLI has no separate local password database and does not create a second profile-link authorization.
 
-A local administrator can turn sync off for the whole installation. This clears local profile links and stops profile requests. Users retain local sign-in. Remote revocations are attempted with a bounded request; failed disconnections remain in a private retry queue visible to local administration. Turning sync back on requires each user to link again. You can also revoke a connection in KagNode Account → Connections → Self-hosted applications.
+After approval, the CLI stores its account identifier and private credentials in its existing owner-only configuration directory. Its display name and photo refresh through the existing CLI account API. Browser examples use the same cached profile and shared Core account control; open its avatar to manage appearance, scrolling and profile synchronization. The name belongs inside that opened control rather than in a second header button.
 
-Set KAGNODE_ACCOUNT_SYNC=off in the server's process environment to enforce disabled mode. Set KAGNODE_ACCOUNT_ISSUER to the exact HTTPS KagNode Account origin when migrating domains. Changing issuer clears old links and disables sync until a local administrator re-enables it; old tokens are never sent to the new origin. No callback hostname, incoming port or application secret needs to be registered: the user approves a short-lived code in KagNode Account.
+## Synchronization and offline access
 
-Local applications store refresh credentials only in private server-side storage. The browser receives profile data and a user code, never a KagNode access/refresh token. Polling is bounded, refreshes are serialized, profile refresh occurs at most once per fifteen minutes per link, and offline errors keep local accounts available. Only still WebP profile photos are accepted by the connection UI.
+Use `kagnode account sync on|off|status`, or the equivalent browser preference. Set `KAGNODE_ACCOUNT_SYNC=off` in the CLI process environment to enforce disabled synchronization. An enforced installation policy cannot be re-enabled from the browser.
 
-Mail administrators use the existing local administrator confirmation. Authenticator assigns profile-sync administration to the retained legacy vault owner, or the first local account when there is no migrated owner; KAGNODE_ACCOUNT_ADMIN can specify a local account ID. This permission does not grant access to other encrypted vaults. VPN's local owner controls installation policy; HTTP Boot's private console credential controls its administrator profile. CLI is controlled by its local operating-system owner using `kagnode account sync on|off|status`; its existing account sign-in supplies the profile, and its browser examples provide the same preference.
+Turning profile synchronization off stops profile refresh and hides the synchronized presentation. It does **not** revoke the CLI's sign-in credentials or remove its existing permission to use fictional examples offline. Use `kagnode logout` to revoke the device when online, remove local credentials and end offline demo access. A failed online revocation is reported honestly so you can revoke the device in KagNode Account later.
 
-The new issuer endpoints are POST /api/v1/account-sync/device, POST /api/v1/account-sync/token, GET /api/v1/account-sync/profile?client_id=PROJECT and POST /api/v1/account-sync/revoke. They must exist on the configured KagNode Account server before linking succeeds. Local web controls use the app's existing session/CSRF mechanisms; Media versions them under /api/v1/kagnode-account.
+Profile refresh is bounded and serialized. The browser state request refreshes a stale profile at most once per fifteen minutes; a manual refresh and online account commands can request a fresh profile. Network failures keep the last valid local account and explicitly fictional examples available. No cloud resources, billing or live provisioning are activated by a cached profile.
 
-This source preview is validated with isolated and mocked profile requests. Packaging does not deploy the updated KagNode Account server, application servers or any native service. Logos and the downloaded artwork viewer remain account-free.
+## Data and permissions
 
-## Connection recovery
+The CLI uses its existing `/api/cli/device`, `/api/cli/token` and `/api/cli/me` protocol. Its profile panel does not use the separate self-hosted-application sign-in proof or request a new `email.read` grant. It displays the name and photo actually authorized by the CLI grant; it never invents a verified email address or matches accounts by email.
 
-The browser profile panel shows a retry control if status cannot load. A late status response cannot undo a newly changed sync policy. The CLI retains its existing account sign-in flow; it does not create a separate server-style device-link flow from this panel.
+The local browser receives profile presentation and an owner-authorized local demo session, never KagNode access or refresh tokens. KagNode credentials remain in owner-only server-side files. The operating-system owner controls the CLI's local preferences; a KagNode profile cannot grant root or permission to administer other installations.
+
+Core's browser appearance connection remains separate from this server-side profile preference. Core scripts, styling and artwork are served by the local CLI, with an embedded fallback for offline startup. See [Core integration](CORE.md) and [security](SECURITY.md).
