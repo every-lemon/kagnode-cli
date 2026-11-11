@@ -72,11 +72,16 @@ class ReleaseTests(unittest.TestCase):
 
     def test_repository_version_resolves_without_relabeling_product(self):
         cfg, product, version = release.identity()
-        self.assertIn("packaging.", version)
+        if cfg.get("channel") == "stable":
+            self.assertEqual(version, product)
+            self.assertRegex(version, r"^[0-9]+\.[0-9]+\.[0-9]+$")
+        else:
+            self.assertIn("packaging.", version)
         self.assertTrue(version.startswith(product))
-        self.assertIs(type(cfg["revision"]), int)
+        self.assertIsInstance(cfg["revision"], int)
         self.assertGreaterEqual(cfg["revision"], 1)
-        self.assertTrue(version.endswith("packaging." + str(cfg["revision"])))
+        if cfg.get("channel") != "stable":
+            self.assertTrue(version.endswith("packaging." + str(cfg["revision"])))
 
 
 if __name__ == "__main__":

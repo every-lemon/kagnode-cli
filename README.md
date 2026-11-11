@@ -8,9 +8,9 @@ Linux terminal and browser tools for KagNode account sign-in and explicitly fict
 
 ## Release status
 
-Product source: **1.2.0-beta.1**. Packaging preview: **1.2.0-beta.1.packaging.14**.
+**5.0.0** is the coordinated stable CLI release, with locally bundled Core 5 browser presentation.
 
-Packaging prereleases do not change the latest stable release or establish new hardware or service compatibility. See [verification](docs/VERIFICATION.md) and [changelog](CHANGELOG.md).
+Stable scope covers the CLI, keyboard-only setup/update workflows and fictional browser examples. Managed applications and hardware retain separate verification boundaries. See [verification](docs/VERIFICATION.md) and [changelog](CHANGELOG.md).
 
 ## Features
 
@@ -18,8 +18,8 @@ Packaging prereleases do not change the latest stable release or establish new h
 - GitHub release checks, verified source installs and local admin-panel update manager.
 - Optional digest-pinned Vaultwarden engine setup for KagNode Passwords.
 
-- Browser-assisted account sign-in.
-- Interactive terminal interface and local browser examples.
+- Login with KagNode through the shared account sign-in and approval journey.
+- Interactive terminal interface and local browser examples with the shared Core account menu.
 - Fictional product workflows; no live provisioning, inference or billing API.
 
 Optional KagNode Account linking syncs your display name and photo after explicit approval. Your local application administrator can disable it. Local sign-in and permissions stay independent.
@@ -35,9 +35,9 @@ Download from [GitHub Releases](https://github.com/every-lemon/kagnode-cli/relea
 | Payload | Formats | Support |
 | --- | --- | --- |
 | Complete source / artwork | `.tar.xz`, `.tar.gz`, `.zip` | Named top-level directory; manual setup |
-| Source preview | `.deb` | Source only; does not provision a service |
-| Source preview | `.rpm` | Rocky Linux 10 packaging preview; native services unverified |
-| Linux CLI binaries | `.deb`, preview `.rpm`, `.tar.xz`, `.tar.gz`, `.zip` | amd64 and arm64 |
+| Source | `.deb` | Source only; does not provision a service |
+| Source | `.rpm` | Rocky Linux 10 source payload; manual build |
+| Linux CLI binaries | `.deb`, `.rpm`, `.tar.xz`, `.tar.gz`, `.zip` | amd64 and arm64 |
 
 
 
@@ -62,7 +62,7 @@ Account credentials stay under the user-scoped KagNode XDG configuration directo
 
 ## Security
 
-Use HTTPS and least-privilege accounts for hosted services. Keep secrets and user data out of Git. Preview packages are for inspection and controlled testing; native service and hardware claims remain limited to recorded verification. See [security guidance](docs/SECURITY.md).
+Use HTTPS and least-privilege accounts for hosted services. Keep secrets and user data out of Git. Managed application/native-service capabilities are qualified separately; installing the CLI does not qualify or automatically deploy them. See [security guidance](docs/SECURITY.md).
 
 ## Development and testing
 

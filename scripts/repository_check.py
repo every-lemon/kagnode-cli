@@ -29,7 +29,11 @@ HEADINGS = [
 def check():
     cfg, product, preview = identity()
     readme = (ROOT / "README.md").read_text()
-    expected = f"Product source: **{product}**. Packaging preview: **{preview}**."
+    expected = (
+        f"**{product}** is the coordinated stable"
+        if cfg.get("channel") == "stable"
+        else f"Product source: **{product}**. Packaging preview: **{preview}**."
+    )
     if expected not in readme:
         raise ValueError("README release status differs from the package identity")
     if re.findall(r"^## (.+)$", readme, re.M) != HEADINGS:

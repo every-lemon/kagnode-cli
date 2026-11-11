@@ -322,6 +322,8 @@
     popup.setAttribute("aria-label", "Choose " + title(el));
     owner.setAttribute("aria-controls", popup.id);
     let view = new Date();
+    const validationInput = document.createElement("input");
+    validationInput.type = mode;
     function valid() {
       owner.disabled = el.disabled || el.readOnly;
       const value = el.value;
@@ -329,19 +331,15 @@
         el.setCustomValidity("");
         return;
       }
-      const regex =
-        mode === "datetime-local"
-          ? /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/
-          : /^\d{4}-\d{2}-\d{2}$/;
-      const d = new Date(
-        value + (mode === "datetime-local" ? ":00" : "T12:00:00"),
-      );
+      // Preserve the browser's date, precision and step-base rules after the
+      // visible field becomes text. Invalid constraints retain native semantics.
+      validationInput.min = el.min;
+      validationInput.max = el.max;
+      validationInput.step = el.step;
+      validationInput.setAttribute("value", el.getAttribute("value") || "");
+      validationInput.value = value;
       const good =
-        regex.test(value) &&
-        !Number.isNaN(d.getTime()) &&
-        iso(d) === value.slice(0, 10) &&
-        (!el.min || value >= el.min) &&
-        (!el.max || value <= el.max);
+        validationInput.value !== "" && validationInput.validity.valid;
       el.setCustomValidity(
         good
           ? ""
@@ -446,10 +444,14 @@
           e.preventDefault();
           const buttons = [...grid.querySelectorAll("button")],
             i = buttons.indexOf(b);
-          const target =
-            buttons[Math.max(0, Math.min(buttons.length - 1, i + jump))];
+          let index = Math.max(0, Math.min(buttons.length - 1, i + jump));
+          // Disabled dates cannot receive focus. Keep the current enabled tab stop
+          // when the requested direction reaches the allowed range boundary.
+          while (buttons[index]?.disabled) index += Math.sign(jump);
+          const target = buttons[index];
+          if (!target) return;
           buttons.forEach((x) => (x.tabIndex = x === target ? 0 : -1));
-          target?.focus();
+          target.focus();
         }
       });
       if (mode === "datetime-local") {
@@ -534,7 +536,7 @@
     el.form?.addEventListener("reset", () => setTimeout(valid, 0));
     new MutationObserver(valid).observe(el, {
       attributes: true,
-      attributeFilter: ["disabled", "readonly", "min", "max"],
+      attributeFilter: ["disabled", "readonly", "min", "max", "step", "value"],
     });
     syncers.set(el, valid);
     valid();

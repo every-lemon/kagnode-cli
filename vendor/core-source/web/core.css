@@ -98,6 +98,7 @@ html[data-kn-core] [data-core-account-trigger] > svg {
   height: 20px;
 }
 html[data-kn-core] [data-core-account-menu] {
+  box-sizing: border-box;
   position: fixed !important;
   left: auto !important;
   width: min(288px, calc(100vw - 24px)) !important;
@@ -127,7 +128,7 @@ html[data-kn-core] [data-core-account-menu] :is(a, button) {
   text-align: left;
   text-decoration: none;
   font: inherit;
-  border-radius: 6px !important;
+  border-radius: var(--kn-radius-control) !important;
 }
 html[data-kn-core] [data-core-account-menu] :is(a, button):hover {
   background: var(--kn-panel);
@@ -391,9 +392,7 @@ html[data-kn-core][data-core-collapsed="true"]
     width: calc(
       100% - var(--kn-sidebar-reserved-size, var(--kn-sidebar-size))
     ) !important;
-    transition:
-      margin-left var(--kn-motion) var(--kn-easing),
-      width var(--kn-motion) var(--kn-easing);
+    transition: var(--kn-layout-transition, none);
   }
   html[data-core-shell="active"] :is(#dashboard > .topbar, .kn-ui > .topbar) {
     left: var(--kn-sidebar-reserved-size, var(--kn-sidebar-size)) !important;
@@ -407,9 +406,7 @@ html[data-kn-core][data-core-collapsed="true"]
     width: calc(
       100% - var(--kn-sidebar-reserved-size, var(--kn-sidebar-size))
     ) !important;
-    transition:
-      margin-left var(--kn-motion) var(--kn-easing),
-      width var(--kn-motion) var(--kn-easing);
+    transition: var(--kn-layout-transition, none);
   }
   [data-core-public="true"] .site-navigation .nav-pages {
     display: none !important;
@@ -825,4 +822,10 @@ html[data-core-shell="inactive"]
 }
 html[data-kn-core] .sidebar[data-core-sidebar][hidden] {
   display: none !important;
+}
+
+html[data-core-ready="true"] {
+  --kn-layout-transition:
+    margin-left var(--kn-motion) var(--kn-easing),
+    width var(--kn-motion) var(--kn-easing);
 }

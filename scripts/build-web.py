@@ -17,6 +17,23 @@ spec = importlib.util.spec_from_file_location(
 core = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(core)
 core.BUNDLE = json.loads((source / "core-bundle.json").read_text())
+core.TEMPLATES = json.loads(
+    (root / "vendor/core-source/packages/templates.json").read_text()
+)
+account_menu = core.render_template(
+    "account-menu",
+    {
+        "identity": "<strong data-kn-account-name>CLI account</strong><small>Local CLI examples</small>",
+        "actions": '<section data-kn-scroll-settings></section><section class="kn-account-settings" data-kn-account-settings></section>',
+    },
+)
+account_control = (
+    '<div class="kn-cli-profile"><button type="button" class="icon-button" '
+    'data-core-account-trigger aria-label="Account and preferences" aria-expanded="false">'
+    '<span class="kn-profile-avatar" data-kn-account-avatar>A</span></button>'
+    + account_menu
+    + "</div>"
+)
 # Retain only the current generated local fallback. Runtime releases are separate.
 for stale in source.glob("kn-core-*"):
     if stale.name.removeprefix("kn-core-") not in core.BUNDLE["files"]:
@@ -60,7 +77,8 @@ with tempfile.TemporaryDirectory(prefix="kagnode-cli-web-") as scratch:
         mapped = manifest.get("/kn-core-" + name, "/kn-core-" + name)
         manifest["/kagnode-core/" + core.BUNDLE["version"] + "/" + name] = mapped
     for file in sorted(source.glob("*.html")):
-        text = core.inject(file.read_text(), "cli")
+        text = file.read_text().replace("<div data-cli-account></div>", account_control)
+        text = core.inject(text, "cli")
         if file.name.startswith("frame-"):
             # Sandboxed fictional frames have an opaque origin and inline-only CSP.
             # Embed Core at build time rather than granting the frame network access.

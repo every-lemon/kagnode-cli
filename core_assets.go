@@ -8,9 +8,27 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 )
+
+var coreVersionPattern = regexp.MustCompile(`^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$`)
+
+// Application upgrades select the baseline explicitly. A retained manager
+// binding may replace that baseline only with a patch on the same minor line.
+func corePatchCompatible(version, baseline string) bool {
+	current, minimum := coreVersionPattern.FindStringSubmatch(version), coreVersionPattern.FindStringSubmatch(baseline)
+	if current == nil || minimum == nil || current[1] != minimum[1] || current[2] != minimum[2] {
+		return false
+	}
+	patch, err := strconv.ParseUint(current[3], 10, 64)
+	if err != nil {
+		return false
+	}
+	floor, err := strconv.ParseUint(minimum[3], 10, 64)
+	return err == nil && patch >= floor
+}
 
 func coreHTML(original []byte) []byte {
 	if !strings.Contains(string(original), `name="kagnode-core"`) {
@@ -39,7 +57,7 @@ func coreHTML(original []byte) []byte {
 	var state struct {
 		Version string `json:"version"`
 	}
-	if json.Unmarshal(data, &state) != nil || !regexp.MustCompile(`^1\.0\.\d+$`).MatchString(state.Version) {
+	if json.Unmarshal(data, &state) != nil || !coreVersionPattern.MatchString(state.Version) {
 		return original
 	}
 	manifestBytes, err := os.ReadFile(filepath.Join(root, "releases", state.Version, "manifest.json"))
@@ -62,6 +80,9 @@ func coreHTML(original []byte) []byte {
 		Entrypoints map[string]string `json:"entrypoints"`
 	}
 	if json.Unmarshal(baselineBytes, &baseline) != nil {
+		return original
+	}
+	if !corePatchCompatible(state.Version, baseline.Version) {
 		return original
 	}
 	result := string(original)

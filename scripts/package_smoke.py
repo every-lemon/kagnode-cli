@@ -9,7 +9,7 @@ import tempfile
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from release import system_packages
+from release import system_packages, config
 
 
 def smoke(folder, engine):
@@ -20,7 +20,10 @@ def smoke(folder, engine):
 
 def smoke_with_previous(folder, engine, temporary):
     manifest = json.loads((folder / "release-manifest.json").read_text())
-    old_version = manifest["version"].rsplit(".", 1)[0] + ".0"
+    old_version = (
+        config().get("upgrade_fixture_version")
+        or manifest["version"].rsplit(".", 1)[0] + ".0"
+    )
     previous = temporary / "previous"
     previous.mkdir()
     for package in sorted(folder.glob("*.deb")):
@@ -67,7 +70,7 @@ def smoke_with_previous(folder, engine, temporary):
 mkdir -p /var/lib/kagnode-fixture
 printf 'retained-user-data\n' > /var/lib/kagnode-fixture/keep
 for file do
-  old=$(printf "%s" "$file" | sed "s/packaging\.[0-9][0-9]*/packaging.0/")
+  old=$(printf "%s" "$file" | sed "s/$release_version/$previous_version/")
   if [ "$kind" = deb ]; then
     name=$(dpkg-deb -f "/packages/$file" Package)
     dpkg -i "/previous/$old"
@@ -99,6 +102,10 @@ done
                 str(previous) + ":/previous:ro",
                 "-e",
                 "kind=" + installer,
+                "-e",
+                "release_version=" + manifest["version"],
+                "-e",
+                "previous_version=" + old_version,
                 image,
                 "sh",
                 "-c",
