@@ -1,21 +1,11 @@
-# KagNode Account in the CLI
+# KagNode Account sign-in
 
-Run `kagnode login` (or `/login` in the keyboard interface) to log in with KagNode. The command opens the central KagNode sign-in and approval journey: compare the displayed code and approve only your own request. Signup and MFA remain on KagNode's account service. The CLI has no separate local password database and does not create a second profile-link authorization.
+`kagnode login` opens same-browser KagNode authorization using client `kagnode-cli-profile`, S256 PKCE and a random state/nonce. A listener binds only literal `127.0.0.1` on an ephemeral port and the fixed `/auth/kagnode/callback` path. It validates the original state, exact issuer, peer, Host and unique callback parameters. Codes are exchanged over the authenticated backchannel; access/refresh tokens never appear in a browser URL.
 
-After approval, the CLI stores its account identifier and private credentials in its existing owner-only configuration directory. Its display name and photo refresh through the existing CLI account API. Browser examples use the same cached profile and shared Core account control; open its avatar to manage appearance, scrolling and profile synchronization. The name belongs inside that opened control rather than in a second header button.
+The first exchange requires a fresh proof bound to issuer, subject, client, loopback installation, sign-in purpose, nonce and bounded time. The subsequent profile must match the same subject. Only then does an atomic private-file replacement store credentials. Legacy device credentials remain usable with their original endpoints until explicit successful new sign-in replaces them. Failed, denied or offline login does not overwrite them. There is no email-based account merging or local privilege grant.
 
-## Synchronization and offline access
+`kagnode login --headless` retains the explicit legacy device-code flow. Optional `--server` accepts an HTTPS origin, with literal loopback HTTP allowed for isolated tests. HTTP redirects are never followed by the token client.
 
-Use `kagnode account sync on|off|status`, or the equivalent browser preference. Set `KAGNODE_ACCOUNT_SYNC=off` in the CLI process environment to enforce disabled synchronization. An enforced installation policy cannot be re-enabled from the browser.
+`kagnode account sync on|off|status` controls display name/photo refresh; installation administrators can set `KAGNODE_ACCOUNT_SYNC=off`. It does not revoke sign-in or gate local application setup. `kagnode logout` attempts online revocation, reports uncertainty and removes local credentials. It preserves application data and old example files.
 
-Turning profile synchronization off stops profile refresh and hides the synchronized presentation. It does **not** revoke the CLI's sign-in credentials or remove its existing permission to use fictional examples offline. Use `kagnode logout` to revoke the device when online, remove local credentials and end offline demo access. A failed online revocation is reported honestly so you can revoke the device in KagNode Account later.
-
-Profile refresh is bounded and serialized. The browser state request refreshes a stale profile at most once per fifteen minutes; a manual refresh and online account commands can request a fresh profile. Network failures keep the last valid local account and explicitly fictional examples available. No cloud resources, billing or live provisioning are activated by a cached profile.
-
-## Data and permissions
-
-The CLI uses its existing `/api/cli/device`, `/api/cli/token` and `/api/cli/me` protocol. Its profile panel does not use the separate self-hosted-application sign-in proof or request a new `email.read` grant. It displays the name and photo actually authorized by the CLI grant; it never invents a verified email address or matches accounts by email.
-
-The local browser receives profile presentation and an owner-authorized local demo session, never KagNode access or refresh tokens. KagNode credentials remain in owner-only server-side files. The operating-system owner controls the CLI's local preferences; a KagNode profile cannot grant root or permission to administer other installations.
-
-Core's browser appearance connection remains separate from this server-side profile preference. Core scripts, styling and artwork are served by the local CLI, with an embedded fallback for offline startup. See [Core integration](CORE.md) and [security](SECURITY.md).
+Credentials remain at the established XDG config path with mode0600. The keyboard TUI renders only sanitized profile text. No account requirement is imposed on application installation or local administration. Tests use fictional isolated issuers; they do not log in to production.

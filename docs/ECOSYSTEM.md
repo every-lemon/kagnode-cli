@@ -4,20 +4,21 @@
 continues, Esc goes back. It never enables mouse reporting. `kagnode tui` also
 provides `/setup` and `/apps`.
 
-For a fresh Passwords, Media, Logos or CLI installation, choose **Install and set
-up**. Select the channel and enter the HTTPS address once, then review the operation.
-The wizard installs the verified release and configures it in sequence; a failed
-installation stops before service activation. Existing deployments can use the
-separate update operation without rewriting their configuration.
+CLI 5.0.1 uses real project-owned installer interfaces. Start with **Set up application**. If no source is installed, the wizard shows the checked stable release and asks before downloading it. It then obtains the owning project's plan, asks only for its typed configuration fields, shows the complete changes and requires explicit review before apply. It restores normal terminal input for a supported interactive native installer and never claims success until separate health checks pass.
 
 Scriptable equivalents:
 
 ```sh
 kagnode apps list
-kagnode apps check passwords --channel preview
-sudo kagnode apps --root /srv/kagnode install passwords --channel preview
-sudo kagnode apps --root /srv/kagnode setup passwords --origin https://passwords.example.com
+kagnode apps check mail
+sudo kagnode apps install mail
+sudo kagnode apps plan mail --mode native --config /root/mail-config.json --save-plan /root/mail-plan.json
+sudo kagnode apps apply mail --plan /root/mail-plan.json
+sudo kagnode apps installer-status mail
+sudo kagnode apps health mail
 ```
+
+Configuration and review files must be private. See [the typed installer contract](INSTALLERS.md). `apps setup` from older versions now explains the reviewed replacement; it cannot guess native commands. Recovery needs a fresh `apps plan PROJECT --recover` review before `apps recover PROJECT --plan FILE`.
 
 ## Shared application root
 
@@ -40,16 +41,17 @@ mail storage or native service configuration.
 | --- | --- | --- |
 | Passwords | Yes | Python virtual environment, loopback web service |
 | Media | Yes | Node.js 24 web service; native codecs remain separate |
-| Logos | Yes | Data-only artwork with loopback gallery server |
+| Logos | Yes | Data-only package; no service is provisioned |
 | CLI | Yes | Go source build; opt-in PATH activation |
+| Entropy | Yes | Project-owned local-service capability; supplemental research remains unassessed |
+| Core | Dedicated signed manager | Explicit reviewed baseline adoption; backend helpers never auto-upgrade |
 | Mail | Yes | Bound existing installation: guarded web-code updates |
 | VPN | Yes | Bound existing installation: signed native updater |
 | HTTP Boot | Yes | Bound existing installation: web console only; images separate |
 
 Mail and VPN's original provisioners expect a dedicated supported host. Downloading
 their source does not provision a mail/VPN server or resolve port, firewall and DNS
-conflicts with other native services. Fresh native provisioning still uses those
-projects' documented installers. Passwords, Media and Logos have managed web setup.
+conflicts with other native services. Fresh native provisioning uses the owning project’s typed adapter or explicitly reviewed interactive installer. Passwords and Media have project-owned application-service setup. A release that does not ship the typed interface refuses setup honestly.
 
 Existing native installations can use a narrow update adapter:
 

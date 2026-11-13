@@ -71,6 +71,18 @@ CATALOG = {
         "kind": "static",
         "port": 8815,
     },
+    "entropy": {
+        "name": "KagNode Entropy",
+        "repo": "kagnode-entropy",
+        "kind": "rust",
+        "port": 8817,
+    },
+    "core": {
+        "name": "KagNode Core",
+        "repo": "kagnode-core",
+        "kind": "signed-ui",
+        "port": None,
+    },
     "cli": {
         "name": "KagNode CLI",
         "repo": "kagnode-cli",
@@ -250,6 +262,9 @@ def validate_metadata(path, value):
         )
     ):
         raise MetadataError(path)
+    if path.name == "setup-operation.json":
+        if value.get("state") not in ("running", "completed", "needs_recovery"):
+            raise MetadataError(path)
     if path.name == "manager.json":
         panels = value.get("panels", {})
         if not isinstance(panels, dict):
@@ -459,6 +474,7 @@ class Manager:
             "operation.json",
             "activation.json",
             "migration.json",
+            "setup-operation.json",
             ".lock",
             "config",
             "releases",
@@ -619,6 +635,7 @@ class Manager:
                 ("state.json", {}),
                 ("operation.json", {}),
                 ("candidate.json", None),
+                ("setup-operation.json", {}),
             ):
                 try:
                     metadata[filename] = read(path / filename, fallback)
@@ -634,6 +651,8 @@ class Manager:
             recovery = bool(
                 errors
                 or state.get("needs_recovery")
+                or metadata["setup-operation.json"].get("state")
+                in ("running", "needs_recovery")
                 or (
                     (
                         (path / "activation.json").exists()
@@ -668,9 +687,11 @@ class Manager:
             "active": state.get("active", False),
             "channel": state.get("channel", "stable"),
             "operation": metadata["operation.json"],
+            "service_setup": metadata["setup-operation.json"],
             "candidate": metadata["candidate.json"],
             "adapter": state.get("adapter", "managed"),
-            "can_apply": not recovery
+            "can_apply": name != "core"
+            and not recovery
             and not in_progress
             and (
                 CATALOG[name]["kind"] not in ("native", "signed-native")
@@ -801,11 +822,18 @@ class Manager:
         (path / "activation.json").unlink(missing_ok=True)
         self.sync_directory(path)
 
-    def require_recovered(self, path, state, allow_migration=False):
+    def require_recovered(
+        self, path, state, allow_migration=False, allow_setup_recovery=False
+    ):
         read(path / "operation.json", {})
         read(path / "candidate.json", None)
         if (
             state.get("needs_recovery")
+            or (
+                not allow_setup_recovery
+                and read(path / "setup-operation.json", {}).get("state")
+                in ("running", "needs_recovery")
+            )
             or (path / "activation.json").exists()
             or (not allow_migration and self.migration_pending(path))
         ):
@@ -815,6 +843,10 @@ class Manager:
 
     def install(self, name, channel="stable", release_id=None):
         name, path = self.project(name)
+        if name == "core":
+            raise ManagerError(
+                "Use kagnode core install/adopt to verify signed Core manifests; source installation is not UI activation."
+            )
         with self.lock(name):
             existing = read(path / "state.json", {})
             self.require_recovered(path, existing)
@@ -1291,6 +1323,12 @@ class Manager:
 
     def prepare(self, name, path, release):
         kind = CATALOG[name]["kind"]
+        # Fresh application source is inert. Dependency installs, runtime users,
+        # configuration and service setup belong to the reviewed project adapter.
+        # Retain the existing bounded preparation for already active managed
+        # upgrades and the explicitly requested CLI source build.
+        if kind != "binary" and not read(path / "state.json", {}).get("active"):
+            return
         if kind not in ("python", "node", "binary"):
             return
         user = self.user(name)
@@ -1417,116 +1455,11 @@ class Manager:
         )
 
     def setup(self, name, origin, port=None):
-        name, path = self.project(name)
-        parsed = urllib.parse.urlsplit(origin)
-        if (
-            parsed.scheme != "https"
-            or not parsed.hostname
-            or parsed.path not in ("", "/")
-            or parsed.query
-            or parsed.fragment
-            or parsed.username
-            or not re.fullmatch(r"https://[A-Za-z0-9.-]+(?::[0-9]+)?/?", origin)
-        ):
-            raise ManagerError(
-                "Use an HTTPS origin without a path, credentials, or query."
-            )
-        with self.lock(name):
-            state = read(path / "state.json", {})
-            self.require_recovered(path, state)
-            if not state.get("version"):
-                raise ManagerError("Install a release before setup.")
-            if state.get("active"):
-                raise ManagerError(
-                    "Already configured. Edit the existing config deliberately; setup will not overwrite it."
-                )
-            kind = CATALOG[name]["kind"]
-            if kind not in ("python", "node", "static"):
-                raise ManagerError(
-                    "Native provisioning uses the project's installer with explicit network, storage and account settings. Downloaded source is in current/; no native services were changed."
-                )
-            port = port or CATALOG[name]["port"]
-            if not 1024 <= port <= 65535:
-                raise ManagerError("Choose an unprivileged port from 1024 to 65535.")
-            with socket.socket() as probe:
-                probe.bind(("127.0.0.1", port))
-            unit = Path(f"/etc/systemd/system/kagnode-{name}.service")
-            worker = Path("/etc/systemd/system/kagnode-media-worker.service")
-            environment = path / "config/service.env"
-            if (
-                unit.exists()
-                or environment.exists()
-                or (name == "media" and worker.exists())
-            ):
-                raise ManagerError(
-                    "Existing service configuration retained. Review it before retrying setup."
-                )
-            user = self.user(name)
-            for folder in ("data", "logs"):
-                os.chown(path / folder, user.pw_uid, user.pw_gid)
-            env = {"KAGNODE_ECOSYSTEM_ROOT": str(self.root), "KAGNODE_APP_ID": name}
-            if name == "passwords":
-                command = f"{path}/current/.venv/bin/python -m authentactor"
-                env.update(
-                    AUTHENTACTOR_DATA=str(path / "data"),
-                    AUTHENTACTOR_HOST="127.0.0.1",
-                    AUTHENTACTOR_PORT=str(port),
-                    AUTHENTACTOR_TRUSTED_PROXY="127.0.0.1",
-                )
-            elif name == "media":
-                command = f"{shutil.which('node')} {path}/current/dist/server.js"
-                env.update(
-                    DATA_DIR=str(path / "data"),
-                    PUBLIC_URL=origin.rstrip("/"),
-                    HOST="127.0.0.1",
-                    PORT=str(port),
-                )
-            else:
-                command = f"{sys.executable} -m http.server {port} --bind 127.0.0.1 --directory {path}/current"
-            environment = path / "config/service.env"
-            environment.write_text(
-                "".join(f"{key}={value}\n" for key, value in env.items())
-            )
-            environment.chmod(0o600)
-            unit = Path(f"/etc/systemd/system/kagnode-{name}.service")
-            if unit.exists():
-                raise ManagerError(
-                    "An existing service has that identity; refusing to replace it."
-                )
-            unit.write_text(
-                f"[Unit]\nDescription={CATALOG[name]['name']}\nAfter=network-online.target\n[Service]\nUser={user.pw_name}\nGroup={user.pw_name}\nWorkingDirectory={path}/current\nEnvironmentFile={environment}\nExecStart={command}\nRestart=on-failure\nUMask=0077\nNoNewPrivileges=true\nPrivateTmp=true\nProtectSystem=strict\nProtectHome=true\nReadWritePaths={path}/data {path}/logs\n[Install]\nWantedBy=multi-user.target\n"
-            )
-            if name == "media":
-                worker = Path("/etc/systemd/system/kagnode-media-worker.service")
-                if worker.exists():
-                    raise ManagerError(
-                        "An existing Media worker service was retained. Review the service configuration."
-                    )
-                worker.write_text(
-                    unit.read_text()
-                    .replace(
-                        "Description=KagNode Media",
-                        "Description=KagNode Media processing worker",
-                    )
-                    .replace("dist/server.js", "dist/worker.js")
-                )
-            subprocess.run(["systemctl", "daemon-reload"], check=True)
-            atomic(
-                path / "state.json",
-                {**state, "port": port, "origin": origin, "active": False},
-            )
-            self.service(name, "enable")
-            try:
-                self.service(name, "start")
-                self.healthy(name)
-            except Exception:
-                self.service(name, "stop", check=False)
-                raise
-            atomic(
-                path / "state.json",
-                {**state, "port": port, "origin": origin, "active": True},
-            )
-            return self.status(name)
+        _, path = self.project(name)
+        self.require_recovered(path, read(path / "state.json", {}))
+        raise ManagerError(
+            "Legacy inferred service setup was retired. Use apps plan PROJECT --mode native|application|adopt, review the project-owned plan, then apps apply PROJECT --plan FILE."
+        )
 
     def activate_cli(self):
         """Opt-in PATH activation; never replace a package-owned executable."""
@@ -1946,6 +1879,23 @@ def main():
             p.add_argument("--channel", choices=["stable", "preview"], default="stable")
         if command in ("install", "update"):
             p.add_argument("--release-id", type=int)
+    for command in ("plan", "apply", "health", "recover", "installer-status"):
+        p = sub.add_parser(command)
+        p.add_argument("project", choices=list(CATALOG))
+        p.add_argument(
+            "--mode", choices=["native", "application", "adopt"], default="application"
+        )
+        p.add_argument(
+            "--config",
+            help="Private JSON configuration file; secret fields are file references",
+        )
+        p.add_argument("--plan", help="Private reviewed plan file for apply/recover")
+        p.add_argument("--save-plan", help="New file inside a private directory")
+        p.add_argument(
+            "--recover",
+            action="store_true",
+            help="Review project-owned recovery instead of fresh setup",
+        )
     p = sub.add_parser("setup")
     p.add_argument("project", choices=list(CATALOG))
     p.add_argument("--origin", required=True)
@@ -1961,7 +1911,8 @@ def main():
     args = parser.parse_args()
     manager = Manager(
         args.root,
-        args.command not in ("list", "status", "check"),
+        args.command
+        not in ("list", "status", "check", "plan", "health", "installer-status"),
         system_root=Path("/"),
     )
     if args.command == "list":
@@ -1994,6 +1945,19 @@ def main():
         result = manager.check(args.project, args.channel)
     elif args.command in ("install", "update"):
         result = manager.install(args.project, args.channel, args.release_id)
+    elif args.command in ("plan", "apply", "health", "recover", "installer-status"):
+        from installer import operate
+
+        result = operate(
+            manager,
+            args.project,
+            "status" if args.command == "installer-status" else args.command,
+            args.mode,
+            args.config,
+            args.plan,
+            args.save_plan,
+            args.recover,
+        )
     elif args.command == "setup":
         result = manager.setup(args.project, args.origin, args.port)
     else:

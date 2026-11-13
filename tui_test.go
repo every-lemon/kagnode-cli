@@ -34,8 +34,8 @@ func TestTUIOutputCannotInjectTerminalControls(t *testing.T) {
 	}
 }
 func TestTUICommandsAreRoutedWithoutShellExecution(t *testing.T) {
-	args, e := tuiArguments("/create classroom example", "vps")
-	if e != nil || strings.Join(args, " ") != "demo vps create classroom example" {
+	args, e := tuiArguments("/status mail", "mail")
+	if e != nil || strings.Join(args, " ") != "apps status mail" {
 		t.Fatal(args, e)
 	}
 	if _, e = tuiArguments("/sh rm -rf something", "vps"); e == nil {
@@ -67,9 +67,9 @@ func TestTUIRendersSmallTerminalsAndEditsHistory(t *testing.T) {
 	if m.input != "/whoami" {
 		t.Fatal(m.input)
 	}
-	m.input = "/prod"
+	m.input = "/cat"
 	m.complete()
-	if m.input != "/products " {
+	if m.input != "/catalog " {
 		t.Fatal(m.input)
 	}
 }

@@ -13,7 +13,7 @@ for arch in amd64 arm64; do
   cp assets/kagnode-wordmark.svg "$out/assets/"
   chmod 755 "$out" "$out/kagnode"
   chmod 644 "$out/"*.md "$out/LICENSE" "$out/ARTWORK-LICENSE"
-  tar -C "$out" -czf "$out.tar.gz" .
+  tar -C dist -czf "$out.tar.gz" "$(basename "$out")"
   deb="dist/deb-$arch"
   mkdir -p "$deb/DEBIAN" "$deb/usr/bin" "$deb/usr/share/doc/kagnode-cli"
   cp "$out/kagnode" "$deb/usr/bin/"
@@ -25,7 +25,7 @@ Package: kagnode-cli
 Version: $version
 Architecture: $arch
 Maintainer: KagNode contributors
-Description: KagNode account sign-in and fictional cloud demos
+Description: KagNode real application management and account sign-in
 Section: utils
 Priority: optional
 CONTROL

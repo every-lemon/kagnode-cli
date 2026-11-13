@@ -155,7 +155,7 @@ func serveAccountProfile(w http.ResponseWriter, r *http.Request, origin string) 
 			err = cacheProfile(&c, profile)
 		}
 		if err != nil {
-			warning = "Profile could not refresh. Your cached account and fictional examples remain available."
+			warning = "Profile could not refresh. Your cached account and local applications remain available."
 		}
 	}
 	_ = json.NewEncoder(w).Encode(cliProfileState(c, warning))

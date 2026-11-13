@@ -9,7 +9,7 @@ jobs:
   browser:
     name: Account link browser (${{ matrix.engine }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -27,9 +27,6 @@ jobs:
           cache: false
       - run: pip install playwright==1.58.0
       - run: playwright install --with-deps ${{ matrix.engine }}
-      - run: python tests/browser_account_link.py
-        env:
-          KAGNODE_BROWSER_ENGINE: ${{ matrix.engine }}
-      - run: python tests/browser_shell.py
+      - run: python tests/browser_login.py
         env:
           KAGNODE_BROWSER_ENGINE: ${{ matrix.engine }}

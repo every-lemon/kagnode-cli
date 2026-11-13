@@ -62,7 +62,7 @@ jobs:
           tag=("v" if stable else "packages/v")+manifest["version"]
           assert os.environ["GITHUB_REF_NAME"]==tag
           notes=pathlib.Path("release-notes.md")
-          notes.write_text("KagNode CLI "+manifest["product_version"]+"\n\n"+("Stable Linux amd64/arm64 CLI, source and fictional browser examples." if stable else "Packaging preview.")+" CLI installation does not deploy or qualify managed native services. Verify SHA256SUMS and release-manifest.json. See README and docs/VERIFICATION.md for tested scope.\n")
+          notes.write_text("KagNode CLI "+manifest["product_version"]+"\n\n"+("Stable Linux amd64/arm64 CLI, real application management and account sign-in." if stable else "Packaging preview.")+" CLI installation does not deploy or qualify managed native services. Verify SHA256SUMS and release-manifest.json. See README and docs/VERIFICATION.md for tested scope.\n")
           args=["gh","release","create",tag,*[str(p) for p in sorted(pathlib.Path("packages").iterdir()) if p.is_file()],"--verify-tag","--title","KagNode CLI "+manifest["product_version"],"--notes-file",str(notes)]
           args += ["--latest=true"] if stable else ["--prerelease","--latest=false"]
           subprocess.run(args,check=True)
