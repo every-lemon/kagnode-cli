@@ -296,8 +296,8 @@ func ecosystemSetup() (result error) {
 			}
 			continue
 		}
-		if project == "cli" || project == "logos" {
-			fmt.Println("This project has no native service setup. Use its application package; CLI PATH activation is available through apps activate-cli.")
+		if project == "cli" {
+			fmt.Println("The CLI has no native service setup. Its PATH activation is available through apps activate-cli.")
 			continue
 		}
 		if os.Geteuid() != 0 {

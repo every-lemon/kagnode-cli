@@ -143,6 +143,37 @@ class InstallerTests(unittest.TestCase):
         with self.assertRaises(ProtocolError):
             installer.private_json(fifo)
 
+    def test_partial_configuration_plan_cannot_apply(self):
+        def partial(adapter, action, request):
+            value = self.plan(request)
+            value["ready_for_apply"] = False
+            value["configuration_errors"] = ["Required value missing"]
+            value["plan_sha256"] = plan_digest(value)
+            return value
+
+        with patch.object(installer, "invoke", side_effect=partial) as invoked:
+            installer.operate(self.manager, "mail", "plan", save_plan=self.review)
+            with self.assertRaisesRegex(ProtocolError, "capability"):
+                installer.operate(
+                    self.manager, "mail", "apply", review_file=self.review
+                )
+            self.assertEqual(
+                [call.args[1] for call in invoked.call_args_list], ["plan", "plan"]
+            )
+        self.assertFalse((self.app / "setup-operation.json").exists())
+
+    def test_bad_setup_journal_is_visible_and_blocks_updates(self):
+        (self.app / "setup-operation.json").write_text('{"state":"invented-success"}')
+        result = self.manager.status("mail")
+        self.assertTrue(result["needs_recovery"])
+        self.assertFalse(result["can_apply"])
+        self.assertIn(
+            "setup-operation.json",
+            [value["file"] for value in result["metadata_errors"]],
+        )
+        with self.assertRaises(eco.MetadataError):
+            self.manager.require_recovered(self.app, {})
+
     def test_changed_adapter_requires_new_review(self):
         with patch.object(installer, "invoke", side_effect=self.fixture):
             installer.operate(self.manager, "mail", "plan", save_plan=self.review)

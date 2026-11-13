@@ -141,9 +141,9 @@ def operate(
     recovery=False,
 ):
     name, path = manager.project(name)
-    if name in ("core", "cli", "logos"):
+    if name in ("core", "cli"):
         raise ProtocolError(
-            "Use the dedicated signed Core manager, CLI activation, or data-only Logos package; no native service installer applies"
+            "Use the dedicated signed Core manager, CLI activation, no native service installer applies"
         )
     config = private_json(configuration) if configuration else {}
     if not isinstance(config, dict):

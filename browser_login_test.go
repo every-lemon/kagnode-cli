@@ -53,6 +53,7 @@ func TestBrowserLoginUsesPKCEAndPreservesLegacyUntilProof(t *testing.T) {
 			var issuer string
 			exchanged := false
 			cancelled := false
+			revoked := false
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				switch r.URL.Path {
@@ -80,6 +81,9 @@ func TestBrowserLoginUsesPKCEAndPreservesLegacyUntilProof(t *testing.T) {
 						subject = "wrong"
 					}
 					json.NewEncoder(w).Encode(map[string]any{"subject": subject, "name": "New name"})
+				case "/api/cli/revoke":
+					revoked = true
+					w.WriteHeader(204)
 				case "/api/v1/account-sync/browser/cancel":
 					cancelled = true
 					json.NewEncoder(w).Encode(map[string]any{})
@@ -89,6 +93,10 @@ func TestBrowserLoginUsesPKCEAndPreservesLegacyUntilProof(t *testing.T) {
 			}))
 			defer server.Close()
 			issuer = server.URL
+			legacy.Base = issuer
+			if err := saveCredentials(legacy); err != nil {
+				t.Fatal(err)
+			}
 			err := browserLogin(issuer, func(destination string) error {
 				if destination != issuer+"/oauth/authorize?request=one" {
 					t.Error("bad URL")
@@ -109,6 +117,9 @@ func TestBrowserLoginUsesPKCEAndPreservesLegacyUntilProof(t *testing.T) {
 			})
 			if (err != nil) != bad {
 				t.Fatal(err)
+			}
+			if revoked == bad {
+				t.Fatal("previous grant revocation did not match committed sign-in")
 			}
 			if !exchanged || !cancelled {
 				t.Fatal("incomplete exchange lifecycle")

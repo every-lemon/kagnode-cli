@@ -37,7 +37,7 @@ type tuiModel struct {
 	scroll    int
 }
 
-var tuiCommands = []string{"/setup", "/apps", "/core", "/help", "/login", "/whoami", "/logout", "/catalog", "/status", "/check", "/clear", "/quit"}
+var tuiCommands = []string{"/setup", "/apps", "/core", "/help", "/login", "/whoami", "/logout", "/catalog", "/select", "/status", "/check", "/clear", "/quit"}
 
 // Remote display names and command output must never become terminal control sequences.
 func tuiSafe(value string) string {
@@ -142,7 +142,7 @@ func (m *tuiModel) identity() {
 	}
 }
 func (m *tuiModel) help() {
-	m.add("/setup             Reviewed application setup wizard\n/catalog           Real application catalog\n/status APP        Inspect installed state\n/check APP         Check published releases\n/apps --help       All scriptable application operations\n/core --help       Signed UI management\n/login             Browser authorization with PKCE\n/login --headless  Explicit device-code fallback\n/whoami            Refresh your account\n/logout            Revoke credentials\n/clear             Clear screen history\n/quit              Exit\n\nNo service is provisioned without reviewing its project-owned installer plan.")
+	m.add("/setup             Reviewed application setup wizard\n/catalog           Real application catalog\n/select APP        Select an application\n/status [APP]      Inspect installed state\n/check [APP]       Check published releases\n/apps --help       All scriptable application operations\n/core --help       Signed UI management\n/login             Browser authorization with PKCE\n/login --headless  Explicit device-code fallback\n/whoami            Refresh your account\n/logout            Revoke credentials\n/clear             Clear screen history\n/quit              Exit\n\nNo service is provisioned without reviewing its project-owned installer plan.")
 }
 func tuiArguments(command, product string) ([]string, error) {
 	parts := strings.Fields(command)
@@ -161,10 +161,14 @@ func tuiArguments(command, product string) ([]string, error) {
 		}
 		return []string{"apps", "list"}, nil
 	case "status", "check":
-		if len(parts) != 2 {
-			return nil, fmt.Errorf("use /%s APP", name)
+		if len(parts) > 2 {
+			return nil, fmt.Errorf("use /%s [APP]", name)
 		}
-		return []string{"apps", name, parts[1]}, nil
+		app := product
+		if len(parts) == 2 {
+			app = parts[1]
+		}
+		return []string{"apps", name, app}, nil
 	default:
 		return nil, fmt.Errorf("unknown command; use /help")
 	}
@@ -240,8 +244,8 @@ func tuiFrame(m *tuiModel, width, height int, color bool) string {
 			label := ""
 			if i == 0 {
 				label = "APPLICATIONS"
-			} else if i <= len(productIDs) {
-				id := productIDs[i-1]
+			} else if i <= len(applicationIDs) {
+				id := applicationIDs[i-1]
 				label = "  " + id
 				if id == m.product {
 					label = "› " + id
@@ -518,6 +522,22 @@ func terminalUI() error {
 				case "help":
 					model.help()
 					continue
+				case "select":
+					found := false
+					if len(fields) == 2 {
+						for _, app := range setupProjects {
+							if app.id == fields[1] {
+								model.product = app.id
+								model.add("Selected " + app.name + ". Use /status, /check or /setup.")
+								found = true
+								break
+							}
+						}
+					}
+					if !found {
+						model.add("Use /select APP with an application from /catalog.")
+					}
+					continue
 				case "catalog":
 					rows := []string{"Application catalog:"}
 					for _, app := range setupProjects {
@@ -531,6 +551,14 @@ func terminalUI() error {
 
 				}
 				args, parseErr := tuiArguments(command, model.product)
+				if (name == "status" || name == "check") && len(fields) == 2 {
+					for _, app := range setupProjects {
+						if app.id == fields[1] {
+							model.product = app.id
+							break
+						}
+					}
+				}
 				if parseErr != nil {
 					model.add(parseErr.Error())
 					continue

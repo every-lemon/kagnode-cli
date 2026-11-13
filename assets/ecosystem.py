@@ -69,7 +69,7 @@ CATALOG = {
         "name": "KagNode Logos",
         "repo": "kagnode-logos",
         "kind": "static",
-        "port": 8815,
+        "port": None,
     },
     "entropy": {
         "name": "KagNode Entropy",
@@ -194,6 +194,7 @@ def validate_metadata(path, value):
         "candidate.json",
         "operation.json",
         "manager.json",
+        "setup-operation.json",
     ):
         return
     for field in ("active", "needs_recovery", "changed", "prerelease"):

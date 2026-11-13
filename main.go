@@ -23,7 +23,7 @@ var assets embed.FS
 
 const version = "5.0.1"
 
-var productIDs = []string{"passwords", "mail", "vpn", "httpboot", "media", "entropy", "logos", "cli", "core"}
+var applicationIDs = []string{"passwords", "mail", "vpn", "httpboot", "media", "entropy", "logos", "cli", "core"}
 
 type credentials struct {
 	Protocol       string `json:"protocol,omitempty"`
@@ -84,38 +84,83 @@ func writePrivate(p string, v any) error {
 	if err = f.Chmod(0600); err == nil {
 		_, err = f.Write(data)
 	}
+	if err == nil {
+		err = f.Sync()
+	}
 	if closeErr := f.Close(); err == nil {
 		err = closeErr
 	}
 	if err != nil {
 		return err
 	}
-	return os.Rename(f.Name(), p)
+	if err = os.Rename(f.Name(), p); err != nil {
+		return err
+	}
+	directory, err := os.Open(filepath.Dir(p))
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return directory.Sync()
 }
 func readCredentials() (credentials, error) {
 	var c credentials
 	p := filepath.Join(pathFor("config"), "account.json")
-	info, err := os.Lstat(p)
+	file, err := os.OpenFile(p, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
-		return c, errors.New("sign in first with: kagnode login")
+		return c, errors.New("sign in first with: kagnode login (credential file is unavailable or unsafe)")
 	}
-	if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
-		return c, errors.New("account file must be a regular file accessible only to its owner (0600)")
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return c, err
 	}
-	b, err := os.ReadFile(p)
-	if err == nil {
-		err = json.Unmarshal(b, &c)
+	owner, ok := info.Sys().(*syscall.Stat_t)
+	if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || !ok || owner.Uid != uint32(os.Geteuid()) || owner.Nlink != 1 || info.Size() > 1<<20 {
+		return c, errors.New("account file must be a private single-link regular file owned by the current user (0600)")
 	}
-	if err == nil {
-		_, err = validBase(c.Base)
+	raw, err := io.ReadAll(io.LimitReader(file, (1<<20)+1))
+	if err != nil {
+		return c, err
 	}
-	if err == nil && c.Protocol != "" && c.Protocol != "account-sync" {
-		err = errors.New("unknown credential protocol; sign in again")
+	if len(raw) > 1<<20 {
+		return c, errors.New("account file is too large")
 	}
-	return c, err
+	if err = json.Unmarshal(raw, &c); err != nil {
+		return c, err
+	}
+	if _, err = validBase(c.Base); err != nil {
+		return c, err
+	}
+	if c.Protocol != "" && c.Protocol != "account-sync" {
+		return c, errors.New("unknown credential protocol; sign in again")
+	}
+	return c, nil
 }
 func saveCredentials(c credentials) error {
 	return writePrivate(filepath.Join(pathFor("config"), "account.json"), c)
+}
+func revokeCredential(c credentials) (bool, error) {
+	route := "/api/cli/revoke"
+	data := map[string]string{"token": c.Refresh}
+	if c.Protocol == "account-sync" {
+		route = "/api/v1/account-sync/revoke"
+		data["client_id"] = profileClient
+	}
+	_, status, err := requestJSON(c.Base, route, "", data)
+	return status == 204 && err == nil, err
+}
+func saveSignIn(c credentials) error {
+	previous, previousError := readCredentials()
+	if err := saveCredentials(c); err != nil {
+		return err
+	}
+	if previousError == nil && previous.Refresh != "" && previous.Refresh != c.Refresh {
+		if confirmed, _ := revokeCredential(previous); !confirmed {
+			fmt.Println("Your new sign-in is saved. Previous authorization revocation was not confirmed; review connected devices in KagNode Account.")
+		}
+	}
+	return nil
 }
 func validBase(base string) (string, error) {
 	u, err := url.Parse(base)
@@ -311,7 +356,7 @@ func deviceLogin(base string) error {
 				c.Photo = photo
 			}
 			c.ID = str(me, "id")
-			if err = saveCredentials(c); err != nil {
+			if err = saveSignIn(c); err != nil {
 				return err
 			}
 			fmt.Println("Signed in as " + c.Name + ".")
@@ -374,16 +419,11 @@ func online(c *credentials) (map[string]any, error) {
 func logout() error {
 	c, err := readCredentials()
 	if err == nil {
-		route := "/api/cli/revoke"
-		data := map[string]string{"token": c.Refresh}
-		if c.Protocol == "account-sync" {
-			route = "/api/v1/account-sync/revoke"
-			data = map[string]string{"client_id": profileClient, "token": c.Refresh}
-		}
-		_, status, callErr := requestJSON(c.Base, route, "", data)
-		if callErr != nil || status != 204 {
+		confirmed, _ := revokeCredential(c)
+		if !confirmed {
 			fmt.Println("Online revocation was not confirmed. Revoke this device in your KagNode account when online.")
 		}
+
 	}
 	if err = os.Remove(filepath.Join(pathFor("config"), "account.json")); err != nil && !os.IsNotExist(err) {
 		return err

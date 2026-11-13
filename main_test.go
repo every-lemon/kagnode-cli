@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"testing"
 	"unicode/utf8"
 )
@@ -100,5 +101,34 @@ func TestNewDistributionHasNoFictionalAssets(t *testing.T) {
 				t.Fatal("retired asset embedded", entry.Name())
 			}
 		}
+	}
+}
+
+func TestCredentialsRejectNonregularAliasesWithoutHanging(t *testing.T) {
+	testHome(t)
+	if err := saveCredentials(credentials{Base: "https://nebulacoder.com", ID: "legacy"}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(pathFor("config"), "account.json")
+	kept := path + ".kept"
+	if err := os.Link(path, kept); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readCredentials(); err == nil {
+		t.Fatal("hardlinked credentials accepted")
+	}
+	os.Remove(path)
+	if err := os.Symlink(kept, path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readCredentials(); err == nil {
+		t.Fatal("symlink credentials accepted")
+	}
+	os.Remove(path)
+	if err := syscall.Mkfifo(path, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readCredentials(); err == nil {
+		t.Fatal("FIFO credentials accepted")
 	}
 }

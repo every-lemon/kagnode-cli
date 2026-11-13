@@ -150,7 +150,7 @@ def system_packages(files, package, version, out, epoch, arch="all", binary=Fals
             f"Package: {package}\nVersion: {debversion}\nArchitecture: {arch}\n"
             "Maintainer: KagNode contributors <every-lemon@users.noreply.github.com>\n"
             "Section: misc\nPriority: optional\n"
-            f"Description: KagNode {package} packaging preview\n"
+            f"Description: KagNode {package} {'CLI application' if binary else 'source distribution'}\n"
             " Source/data packages do not provision native services.\n"
         )
         for path in [root, *root.rglob("*")]:

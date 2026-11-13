@@ -27,7 +27,7 @@ Optional KagNode Account linking syncs your display name and photo after explici
 
 ## Requirements
 
-Linux amd64 or arm64. Building from source requires Go as specified by go.mod; packaged binaries do not require Go or Node.js.
+Linux amd64 or arm64. Account sign-in uses the compiled binary. Application/Core management also requires Python 3.10+ and the system tools declared by the selected project. Building from source requires Go as specified by go.mod; packaged binaries do not require Go or Node.js.
 
 ## Installation and downloads
 
@@ -72,6 +72,8 @@ Use HTTPS and least-privilege accounts for hosted services. Keep secrets and use
 ```sh
 go test ./...
 go vet ./...
+python3 -m unittest discover -s tests -p 'test_*.py'
+python3 tests/tui_pty.py
 python3 scripts/repository_check.py
 python3 scripts/format_source.py --check
 python3 scripts/release.py --output dist/packages

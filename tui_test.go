@@ -73,3 +73,15 @@ func TestTUIRendersSmallTerminalsAndEditsHistory(t *testing.T) {
 		t.Fatal(m.input)
 	}
 }
+
+func TestTUISelectedApplicationRoutesToRealStatus(t *testing.T) {
+	args, err := tuiArguments("/status", "media")
+	if err != nil || strings.Join(args, " ") != "apps status media" {
+		t.Fatal(args, err)
+	}
+	for _, old := range []string{"/demo start", "/create sample", "/products"} {
+		if _, err := tuiArguments(old, "mail"); err == nil || !strings.Contains(err.Error(), "retired") {
+			t.Fatal("old fictional command was not explained", old)
+		}
+	}
+}

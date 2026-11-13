@@ -131,7 +131,11 @@ func browserLogin(base string, open func(string) error) error {
 	results := make(chan outcome, 1)
 	var mu sync.Mutex
 	used := false
-	deadline := time.Now().Add(10 * time.Minute)
+	expires := num(m, "expires_in")
+	if expires <= 0 || expires > 600 {
+		return errors.New("invalid authorization deadline")
+	}
+	deadline := time.Now().Add(time.Duration(expires) * time.Second)
 	server := &http.Server{ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, MaxHeaderBytes: 8192}
 	server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -207,7 +211,7 @@ func browserLogin(base string, open func(string) error) error {
 		}
 		c.ProfileUpdated = time.Now().Unix()
 	}
-	if err = saveCredentials(c); err != nil {
+	if err = saveSignIn(c); err != nil {
 		return err
 	}
 	fmt.Println("Signed in to KagNode Account.")
