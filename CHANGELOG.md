@@ -1,3 +1,12 @@
+# Changelog
+
+## 5.0.1
+
+- Replace fictional example distributions with the real application manager and reviewed project-owned installer protocol.
+- Add default same-browser authorization with PKCE, fixed loopback callback and fresh account proof; retain explicit headless fallback and legacy credentials until a new sign-in succeeds.
+- Add Entropy/Core catalog entries, exact plan review, independent health verification and recoverable setup records.
+- Preserve existing runtime example data and native data locations.
+
 # 1.2.0-beta.1 — ecosystem preview
 
 ## 5.0.0

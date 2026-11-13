@@ -39,3 +39,25 @@ func TestProfilePreferenceDoesNotRemoveLocalAuthentication(t *testing.T) {
 		t.Fatal("environment disable could be overridden")
 	}
 }
+
+func TestTUIHonorsProfilePresentationOptOut(t *testing.T) {
+	testHome(t)
+	if err := saveCredentials(credentials{Base: "https://nebulacoder.com", ID: "subject", Name: "Synced profile name"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := setProfileSync(false); err != nil {
+		t.Fatal(err)
+	}
+	var model tuiModel
+	model.identity()
+	if model.account != "KagNode Account" {
+		t.Fatal("disabled profile shown in TUI")
+	}
+	if err := setProfileSync(true); err != nil {
+		t.Fatal(err)
+	}
+	model.identity()
+	if model.account != "Synced profile name" {
+		t.Fatal("local sign-in/profile cache was lost")
+	}
+}

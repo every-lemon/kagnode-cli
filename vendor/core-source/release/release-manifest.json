@@ -1,0 +1,87 @@
+{
+  "schema": 1,
+  "version": "5.0.6",
+  "source_commit": "01010153018655c80a0ac3c3e705f03cd73341f0",
+  "packages": [
+    {
+      "name": "ARTWORK-LICENSE.txt",
+      "sha256": "f5d14c8bdb8bc2c356764d91c4e8abd0ad7cf5091f7ee0869bc35b54957c1ff9",
+      "size": 1385
+    },
+    {
+      "name": "INSTALL.md",
+      "sha256": "598fd0bce6ab954e3b2342b0fa3a983028fffdbd3d6e5a3c3cfa8fa2a9c6817f",
+      "size": 9495
+    },
+    {
+      "name": "LICENSE.txt",
+      "sha256": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0",
+      "size": 34523
+    },
+    {
+      "name": "core-manifest.json",
+      "sha256": "ac821e97ffc3cc715b5efc89c6e74962b5448fc390fe7650a72330db1f4bd116",
+      "size": 13121
+    },
+    {
+      "name": "core-manifest.sig",
+      "sha256": "fc9ee8daf27e2be2aa0ff5329bfd7bd1e0bfe92a0cd79430fb5dd3578d7c23b6",
+      "size": 64
+    },
+    {
+      "name": "kagnode-core-5.0.6-icons.tar.gz",
+      "sha256": "c464eafe2b35d11e94a94c5e9444d73e28028caa6656b848b4e1ad59a7e4f4f1",
+      "size": 103633
+    },
+    {
+      "name": "kagnode-core-5.0.6-icons.tgz",
+      "sha256": "024bee67dc048de165e12b382870489e73a47aa4e96ffa6746d32bd06ec6609e",
+      "size": 103446
+    },
+    {
+      "name": "kagnode-core-5.0.6-icons.zip",
+      "sha256": "547c40e9abe54f01c5dfee69bc4e64a5f6cc05447f4a9f61d3d91cf1831be5f3",
+      "size": 406105
+    },
+    {
+      "name": "kagnode-core-5.0.6-node.tgz",
+      "sha256": "8a8ce7465e142650573595018fe6129c8f887461d23ebadb958af4bb669a0143",
+      "size": 87762
+    },
+    {
+      "name": "kagnode-core-5.0.6-source.tar.gz",
+      "sha256": "1bed4bc8be2d438c856cd7fa2df6fdf1adfc3ad3ad55b1e6ff6424a15296606d",
+      "size": 180105
+    },
+    {
+      "name": "kagnode-core-5.0.6-source.tar.xz",
+      "sha256": "d568404ba4927bc888b09238872f2b66bc039cb3a5aa70f52ac027b85b91b110",
+      "size": 145984
+    },
+    {
+      "name": "kagnode-core-5.0.6-source.zip",
+      "sha256": "63e86fc204d155790d511f38c7be21dc9ad227e9cbd41db3555bcabb9a6c0589",
+      "size": 223356
+    },
+    {
+      "name": "kagnode-core-5.0.6-ui.tar.gz",
+      "sha256": "166c7daa4050c6ffa9d62cded43c6e347f8ef6fd716adaa89e03b50208675cd2",
+      "size": 41211
+    },
+    {
+      "name": "kagnode-core-5.0.6-ui.tar.xz",
+      "sha256": "4b592be626b4f31d89d5a8ffbcaf4ea7031a31c22d9496f7b9bf369b7badbf9f",
+      "size": 37168
+    },
+    {
+      "name": "kagnode-core-5.0.6-ui.zip",
+      "sha256": "201e109ff3fa9bbe26a3f4033f00caafbf2fab46b4853cacff1190cb178d3009",
+      "size": 41975
+    },
+    {
+      "name": "kagnode_core-5.0.6-py3-none-any.whl",
+      "sha256": "c9743e9e4a7e9d2f62403d2b8d3860d45f487b2ee84a758a2b2f358e9c8fa382",
+      "size": 97713
+    }
+  ]
+}

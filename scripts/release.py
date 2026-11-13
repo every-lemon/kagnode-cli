@@ -150,7 +150,8 @@ def system_packages(files, package, version, out, epoch, arch="all", binary=Fals
             f"Package: {package}\nVersion: {debversion}\nArchitecture: {arch}\n"
             "Maintainer: KagNode contributors <every-lemon@users.noreply.github.com>\n"
             "Section: misc\nPriority: optional\n"
-            f"Description: KagNode {package} packaging preview\n"
+            + ("Recommends: python3 (>= 3.10)\n" if binary else "")
+            + f"Description: KagNode {package} {'CLI application' if binary else 'source distribution'}\n"
             " Source/data packages do not provision native services.\n"
         )
         for path in [root, *root.rglob("*")]:
@@ -201,6 +202,7 @@ License: {license_id}
 URL: https://github.com/every-lemon/{config()["repository"]}
 BuildArch: {rpmarch}
 AutoReqProv: no
+{"Recommends: python3 >= 3.10" if binary else ""}
 %global debug_package %{{nil}}
 %global __os_install_post %{{nil}}
 %global _build_id_links none
@@ -242,6 +244,17 @@ cp -a {root}/. %{{buildroot}}/
 
 
 def build(out, native_cli=True):
+    if subprocess.check_output(
+        ["git", "status", "--porcelain", "--untracked-files=normal"],
+        cwd=ROOT,
+        text=True,
+    ).strip():
+        raise ValueError(
+            "Release builds require a clean committed source tree; commit reviewed changes before creating provenance"
+        )
+    source_revision = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+    ).strip()
     cfg, product, version = identity()
     out = out.resolve()
     if out.exists() and any(out.iterdir()):
@@ -258,6 +271,7 @@ def build(out, native_cli=True):
         )
     )
     files = source_files()
+    input_hashes = {name: digest(path) for name, path in files}
     prefix = f"{cfg['repository']}_{version}_source"
     archives(files, prefix, out, epoch)
     package = (
@@ -320,6 +334,19 @@ def build(out, native_cli=True):
     head = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
     ).strip()
+    changed = subprocess.check_output(
+        ["git", "status", "--porcelain", "--untracked-files=normal"],
+        cwd=ROOT,
+        text=True,
+    ).strip()
+    if (
+        changed
+        or head != source_revision
+        or any(digest(path) != input_hashes[name] for name, path in files)
+    ):
+        raise ValueError(
+            "Source changed during the build; partial outputs are not a release and no manifest was published"
+        )
     manifest = {
         "schema": 1,
         "repository": "every-lemon/" + cfg["repository"],

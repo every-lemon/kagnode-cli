@@ -26,7 +26,13 @@ def run(check):
         if name.endswith(".py")
         and name not in GENERATED
         and (
-            name in {"assets/ecosystem.py", "assets/consolidate.py"}
+            name
+            in {
+                "assets/ecosystem.py",
+                "assets/consolidate.py",
+                "assets/installer.py",
+                "assets/installer_protocol.py",
+            }
             or not any(part in name.split("/") for part in ["vendor", "assets"])
         )
     ]

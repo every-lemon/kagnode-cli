@@ -37,7 +37,7 @@ type tuiModel struct {
 	scroll    int
 }
 
-var tuiCommands = []string{"/setup", "/apps", "/core", "/help", "/login", "/whoami", "/logout", "/products", "/use", "/list", "/create", "/delete", "/demo", "/clear", "/quit"}
+var tuiCommands = []string{"/setup", "/apps", "/core", "/help", "/login", "/whoami", "/logout", "/catalog", "/select", "/status", "/check", "/clear", "/quit"}
 
 // Remote display names and command output must never become terminal control sequences.
 func tuiSafe(value string) string {
@@ -135,6 +135,10 @@ func (m *tuiModel) add(text string) {
 func (m *tuiModel) identity() {
 	m.account = "Not signed in"
 	if c, err := readCredentials(); err == nil {
+		if !profileSyncEnabled() {
+			m.account = "KagNode Account"
+			return
+		}
 		m.account = tuiSafe(c.Name)
 		if m.account == "" {
 			m.account = "KagNode account"
@@ -142,7 +146,7 @@ func (m *tuiModel) identity() {
 	}
 }
 func (m *tuiModel) help() {
-	m.add("/setup             Keyboard-only application setup wizard\n/apps list         List installable KagNode apps\n/apps check passwords --channel preview  Check GitHub releases\n/login             Sign in through your browser\n/whoami            Check your account online\n/products          Show the fictional product catalog\n/use vps           Select a product for /list, /create and /delete\n/list              List that product’s saved sample state\n/create NAME       Create a fictional sample item\n/delete ID         Remove a fictional sample item\n/demo install      Prepare the local example package\n/demo start|stop   Start or stop local browser examples\n/logout            Revoke and clear your CLI credentials\n/clear             Clear this screen’s history\n/quit              Leave the terminal workspace\n\nAccount sign-in is real. AI responses, VPS resources and billing in examples are fictional.")
+	m.add("/setup             Reviewed application setup wizard\n/catalog           Real application catalog\n/select APP        Select an application\n/status [APP]      Inspect installed state\n/check [APP]       Check published releases\n/apps --help       All scriptable application operations\n/core --help       Signed UI management\n/login             Browser authorization with PKCE\n/login --headless  Explicit device-code fallback\n/whoami            Refresh your account\n/logout            Revoke credentials\n/clear             Clear screen history\n/quit              Exit\n\nNo service is provisioned without reviewing its project-owned installer plan.")
 }
 func tuiArguments(command, product string) ([]string, error) {
 	parts := strings.Fields(command)
@@ -151,18 +155,27 @@ func tuiArguments(command, product string) ([]string, error) {
 	}
 	name := strings.TrimPrefix(parts[0], "/")
 	switch name {
-	case "login", "logout", "whoami", "demo", "apps", "core":
+	case "login", "logout", "whoami", "apps", "core":
 		return append([]string{name}, parts[1:]...), nil
-	case "list":
+	case "demo", "products", "use", "list", "create", "delete":
+		return nil, fmt.Errorf("fictional example commands were retired; existing data remains. Use /setup or /catalog for real applications")
+	case "catalog":
 		if len(parts) != 1 {
-			return nil, fmt.Errorf("use /list")
+			return nil, fmt.Errorf("use /catalog")
 		}
-		return []string{"demo", product, "list"}, nil
-	case "create", "delete":
-		if len(parts) < 2 {
-			return nil, fmt.Errorf("use /%s NAME_OR_ID", name)
+		return []string{"apps", "list"}, nil
+	case "status", "check":
+		if len(parts) > 2 {
+			return nil, fmt.Errorf("use /%s [APP]", name)
 		}
-		return append([]string{"demo", product, name}, parts[1:]...), nil
+		app := product
+		if len(parts) == 2 {
+			app = parts[1]
+		}
+		if app == "core" {
+			return nil, fmt.Errorf("use /core %s APP for a bound application; Core is managed separately from application source", name)
+		}
+		return []string{"apps", name, app}, nil
 	default:
 		return nil, fmt.Errorf("unknown command; use /help")
 	}
@@ -207,7 +220,7 @@ func tuiFrame(m *tuiModel, width, height int, color bool) string {
 	b.WriteString("\x1b[?25l\x1b[H")
 	row := func(text string) { b.WriteString(text); b.WriteString("\x1b[K\r\n") }
 	row(blue(tuiClip("KagNode. CLI  "+version, width)))
-	status := m.account + "  ·  Fictional examples"
+	status := m.account + "  ·  Applications"
 	if m.busy {
 		spinner := []string{"◐", "◓", "◑", "◒"}
 		status = spinner[m.frame%4] + " Running command · Ctrl+C cancels"
@@ -237,9 +250,9 @@ func tuiFrame(m *tuiModel, width, height int, color bool) string {
 		if side > 0 {
 			label := ""
 			if i == 0 {
-				label = "PRODUCT EXAMPLES"
-			} else if i <= len(productIDs) {
-				id := productIDs[i-1]
+				label = "APPLICATIONS"
+			} else if i <= len(applicationIDs) {
+				id := applicationIDs[i-1]
 				label = "  " + id
 				if id == m.product {
 					label = "› " + id
@@ -328,7 +341,8 @@ func (w *tuiWriter) flush() {
 
 func interactive() error {
 	if !tuiTerminal() {
-		return menu()
+		fmt.Println("Run kagnode help for scriptable commands or kagnode setup for guided setup.")
+		return nil
 	}
 	return terminalUI()
 }
@@ -372,9 +386,9 @@ func terminalUI() error {
 	defer signal.Stop(signals)
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
-	model := tuiModel{product: "vps"}
+	model := tuiModel{product: "passwords"}
 	model.identity()
-	model.add("Welcome to KagNode.\n\nSet up applications with /setup, inspect /apps list, or sign in with /login.\nManage local applications, your account, and fictional cloud examples. It does not provision live cloud services.")
+	model.add("Welcome to KagNode.\n\nSet up applications with /setup, inspect /apps list, or sign in with /login.\nManage local applications and your account. Review a real installer plan before changing this system.")
 	var cancel context.CancelFunc
 	defer func() {
 		if cancel != nil {
@@ -515,22 +529,43 @@ func terminalUI() error {
 				case "help":
 					model.help()
 					continue
+				case "select":
+					found := false
+					if len(fields) == 2 {
+						for _, app := range setupProjects {
+							if app.id == fields[1] {
+								model.product = app.id
+								model.add("Selected " + app.name + ". Use /status, /check or /setup.")
+								found = true
+								break
+							}
+						}
+					}
+					if !found {
+						model.add("Use /select APP with an application from /catalog.")
+					}
+					continue
+				case "catalog":
+					rows := []string{"Application catalog:"}
+					for _, app := range setupProjects {
+						rows = append(rows, app.id+"  "+app.name)
+					}
+					model.add(strings.Join(rows, "\n"))
+					continue
 				case "clear":
 					model.lines = nil
 					continue
-				case "products":
-					model.add("Fictional product catalog:\n" + strings.Join(productIDs, " · ") + "\n\nSelect a product with /use PRODUCT, then /list.")
-					continue
-				case "use":
-					if len(fields) != 2 || !known(fields[1]) {
-						model.add("Use /use PRODUCT with a product from /products.")
-					} else {
-						model.product = fields[1]
-						model.add("Selected " + model.product + " examples. Use /list to inspect local sample state.")
-					}
-					continue
+
 				}
 				args, parseErr := tuiArguments(command, model.product)
+				if (name == "status" || name == "check") && len(fields) == 2 {
+					for _, app := range setupProjects {
+						if app.id == fields[1] {
+							model.product = app.id
+							break
+						}
+					}
+				}
 				if parseErr != nil {
 					model.add(parseErr.Error())
 					continue
@@ -546,6 +581,8 @@ func terminalUI() error {
 				go func(args []string) {
 					writer := &tuiWriter{events: events}
 					child := exec.CommandContext(ctx, executable, args...)
+					child.Cancel = func() error { return child.Process.Signal(syscall.SIGTERM) }
+					child.WaitDelay = 30 * time.Second
 					child.Stdout = writer
 					child.Stderr = writer
 					runErr := child.Run()

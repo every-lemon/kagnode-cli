@@ -4,13 +4,13 @@
 
 ## Overview
 
-Linux terminal and browser tools for KagNode account sign-in and explicitly fictional cloud examples.
+A keyboard-only Linux application manager and KagNode Account client. Review real project-owned installation plans before changing your system.
 
 ## Release status
 
-**5.0.0** is the coordinated stable CLI release, with locally bundled Core 5 browser presentation.
+**5.0.1** is the coordinated stable CLI release, replacing fictional examples with real application setup and browser PKCE sign-in.
 
-Stable scope covers the CLI, keyboard-only setup/update workflows and fictional browser examples. Managed applications and hardware retain separate verification boundaries. See [verification](docs/VERIFICATION.md) and [changelog](CHANGELOG.md).
+Stable scope covers the CLI and tested installer orchestration. Each project declares its supported operating systems and setup modes; native services and hardware retain separate verification boundaries. Fresh typed runtimes require a project-owned reviewed update interface; switching downloaded source is explicitly blocked from pretending to upgrade them. Existing guarded native updaters remain supported. See [verification](docs/VERIFICATION.md) and [changelog](CHANGELOG.md).
 
 ## Features
 
@@ -19,14 +19,15 @@ Stable scope covers the CLI, keyboard-only setup/update workflows and fictional 
 - Optional digest-pinned Vaultwarden engine setup for KagNode Passwords.
 
 - Login with KagNode through the shared account sign-in and approval journey.
-- Interactive terminal interface and local browser examples with the shared Core account menu.
-- Fictional product workflows; no live provisioning, inference or billing API.
+- Browser authorization with a private loopback return, PKCE and validated fresh proof; explicit headless fallback.
+- Project-owned dependency, configuration, review, health and recovery interfaces.
+- Entropy and signed Core catalog entries. Retired demo commands explain their removal; existing user data remains.
 
 Optional KagNode Account linking syncs your display name and photo after explicit approval. Your local application administrator can disable it. Local sign-in and permissions stay independent.
 
 ## Requirements
 
-Linux amd64 or arm64. Building from source requires Go as specified by go.mod; packaged binaries do not require Go or Node.js.
+Linux amd64 or arm64. Account sign-in uses the compiled binary. Application/Core management also requires Python 3.10+ and the system tools declared by the selected project. Building from source requires Go as specified by go.mod; packaged binaries do not require Go or Node.js.
 
 ## Installation and downloads
 
@@ -41,6 +42,8 @@ Download from [GitHub Releases](https://github.com/every-lemon/kagnode-cli/relea
 
 
 
+Linux arm64 binaries are cross-built; disposable package lifecycle checks run on amd64. Physical/native service qualification remains separate.
+
 Source packages install under `/usr/share/kagnode/`; they do not replace an existing application, migrate data, start services or configure networking. CLI binary packages install /usr/bin/kagnode. See [package details](docs/PACKAGING.md).
 
 ## Usage
@@ -48,17 +51,19 @@ Source packages install under `/usr/share/kagnode/`; they do not replace an exis
 ```sh
 kagnode login
 kagnode whoami
-kagnode demo install
-kagnode demo start
+kagnode setup
+kagnode apps list
+kagnode apps plan mail --mode native --config /root/mail-config.json --save-plan /root/mail-plan.json
+kagnode apps apply mail --plan /root/mail-plan.json
 ```
 
-See [operations and existing setup instructions](docs/OPERATIONS.md) for the full workflow and its prerequisites.
+See [reviewed application setup](docs/INSTALLERS.md) and [account sign-in](docs/ACCOUNT-SYNC.md) for prerequisites and recovery.
 
 ## Configuration and storage
 
-Shared presentation uses [KagNode Core](docs/CORE.md), with a pinned local fallback and reviewed server adapters. Compatible stable UI patches have a separate local-administrator policy.
+The [KagNode Core manager](docs/CORE.md) verifies signed UI releases and reviewed adapters. This terminal application has no browser-demo server.
 
-Account credentials stay under the user-scoped KagNode XDG configuration directory; local demo data stays in its separate XDG data directory.
+Account credentials remain under the user-scoped KagNode XDG configuration directory (0600). Applications share `/srv/kagnode` for releases, configuration and manager state; native projects retain their declared native data locations. Old example data in the XDG data directory is retained but no longer distributed or served.
 
 ## Security
 
@@ -69,6 +74,8 @@ Use HTTPS and least-privilege accounts for hosted services. Keep secrets and use
 ```sh
 go test ./...
 go vet ./...
+python3 -m unittest discover -s tests -p 'test_*.py'
+python3 tests/tui_pty.py
 python3 scripts/repository_check.py
 python3 scripts/format_source.py --check
 python3 scripts/release.py --output dist/packages
@@ -81,7 +88,7 @@ Install the formatting dependencies from `requirements-format.txt`. Package buil
 - [Ecosystem setup, update adapters and current limitations](docs/ECOSYSTEM.md)
 
 - [Repository structure](docs/STRUCTURE.md)
-- [Operations](docs/OPERATIONS.md)
+- [Historical operations](docs/OPERATIONS.md)
 - [Packages and release process](docs/PACKAGING.md)
 - [Verification and limits](docs/VERIFICATION.md)
 - [KagNode Account linking](docs/ACCOUNT-SYNC.md)

@@ -1,1 +1,0 @@
-/* Scrolling is provided by the pinned KagNode Core bundle. */

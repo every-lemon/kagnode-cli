@@ -4,20 +4,21 @@
 continues, Esc goes back. It never enables mouse reporting. `kagnode tui` also
 provides `/setup` and `/apps`.
 
-For a fresh Passwords, Media, Logos or CLI installation, choose **Install and set
-up**. Select the channel and enter the HTTPS address once, then review the operation.
-The wizard installs the verified release and configures it in sequence; a failed
-installation stops before service activation. Existing deployments can use the
-separate update operation without rewriting their configuration.
+CLI 5.0.1 uses real project-owned installer interfaces. Start with **Set up application**. If no source is installed, the wizard shows the checked stable release and asks before downloading it. It then obtains the owning project's plan, asks only for its typed configuration fields, shows the complete changes and requires explicit review before apply. It restores normal terminal input for a supported interactive native installer and never claims success until separate health checks pass.
 
 Scriptable equivalents:
 
 ```sh
 kagnode apps list
-kagnode apps check passwords --channel preview
-sudo kagnode apps --root /srv/kagnode install passwords --channel preview
-sudo kagnode apps --root /srv/kagnode setup passwords --origin https://passwords.example.com
+kagnode apps check mail
+sudo kagnode apps install mail
+sudo kagnode apps plan mail --mode native --config /root/mail-config.json --save-plan /root/mail-plan.json
+sudo kagnode apps apply mail --plan /root/mail-plan.json
+sudo kagnode apps installer-status mail
+sudo kagnode apps health mail
 ```
+
+Configuration and review files must be private. See [the typed installer contract](INSTALLERS.md). `apps setup` from older versions now explains the reviewed replacement; it cannot guess native commands. Recovery needs a fresh `apps plan PROJECT --recover` review before `apps recover PROJECT --plan FILE`.
 
 ## Shared application root
 
@@ -36,20 +37,25 @@ mail storage or native service configuration.
 
 ## Available operations
 
-| Application | Release check and verified source install | Managed service setup/update |
+| Application | Setup capability | Boundary |
 | --- | --- | --- |
-| Passwords | Yes | Python virtual environment, loopback web service |
-| Media | Yes | Node.js 24 web service; native codecs remain separate |
-| Logos | Yes | Data-only artwork with loopback gallery server |
-| CLI | Yes | Go source build; opt-in PATH activation |
-| Mail | Yes | Bound existing installation: guarded web-code updates |
-| VPN | Yes | Bound existing installation: signed native updater |
-| HTTP Boot | Yes | Bound existing installation: web console only; images separate |
+| Passwords | Project-owned Python application service in shared root | Globally usable Python 3.12+; encrypted vault initialization stays in the web app |
+| Media | Project-owned Node.js 24 web application in shared root | No worker activation, FFmpeg/transcoding or codec qualification |
+| Entropy | Project-owned loopback OS-backed service in shared root | Globally usable Rust 1.88+; no video, enclave or entropy-quality qualification |
+| Logos | Data-only artwork/viewer copy with exact inventory health | No accounts, web service or native daemon |
+| CLI | Linux amd64/arm64 binary or reviewed Go source build | Opt-in PATH activation; preserve existing executable ownership |
+| Core | Dedicated signed manager and explicit reviewed helper import | UI patches cannot replace a backend helper |
+| Mail | Dedicated Ubuntu 24.04 native installer, reviewed noninteractive fields | DNS, external TLS and real delivery remain separate checks; existing guarded web updater retained |
+| VPN | Reviewed native installer handoff with a real TTY | Network choices remain in the owning console; existing signed updater retained |
+| HTTP Boot | Reviewed interactive Server authority console | Existing native Server package is required; no images, Client, Builder or hardware qualification |
+
+Application-mode adapters gate Ubuntu 24.04 and Debian 12/13 against their actual prerequisite versions and permissions. Native adapters retain their owning project's stricter OS/architecture limits. A failed or exited interactive installer never becomes a successful setup without health verification.
+
+Fresh typed runtimes record their own installed-source/runtime identity. This release blocks legacy source/current switching from claiming to update those separate runtimes; their project-owned reviewed update capability is not yet available. Existing installations already bound to guarded/signed native updates retain that path.
 
 Mail and VPN's original provisioners expect a dedicated supported host. Downloading
 their source does not provision a mail/VPN server or resolve port, firewall and DNS
-conflicts with other native services. Fresh native provisioning still uses those
-projects' documented installers. Passwords, Media and Logos have managed web setup.
+conflicts with other native services. Fresh native provisioning uses the owning project’s typed adapter or explicitly reviewed interactive installer. Passwords and Media have project-owned application-service setup. A release that does not ship the typed interface refuses setup honestly.
 
 Existing native installations can use a narrow update adapter:
 

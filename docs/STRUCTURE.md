@@ -1,20 +1,16 @@
 # Repository map
 
-| Area | Edit here | Notes |
+| Area | Editable source | Purpose |
 | --- | --- | --- |
-| Application / canonical source | main.go, tui.go, ecosystem.go and web_assets.go | Human-editable source |
-| Generated output | assets/ examples and dist/ release output | Rebuild with the existing generator; do not hand edit |
-| Tests | tests/ | Existing project checks; Logos uses scripts/verify.py |
-| Packaging | packaging/ and scripts/release.py | Explicit source allowlist, version resolver and reproducible payloads |
-| Documentation | README.md and docs/ | Shared README order; detailed setup in OPERATIONS.md |
-| CI | .github/workflows/ | Separate application, format/package and release gates |
+| Commands and credentials | `main.go`, `browser_login.go`, `account_sync.go` | Account protocol, private storage and scriptable commands |
+| Terminal UI | `tui.go`, `ecosystem.go` | Keyboard navigation, bounded output and reviewed setup wizard |
+| Local manager | `assets/ecosystem.py`, `assets/installer.py` | Release verification and fixed project installer invocation |
+| Installer protocol | `adapters/installer_protocol.py` | Vendored project interface validation; no native business rules |
+| Core manager | `assets/core_manager.py`, `vendor/core-source/` | Separately reviewed signed UI/helper provenance |
+| Tests | Go test files and `tests/` | Disposable mocked services and protocol fixtures |
+| Packages | `packaging/`, `scripts/release.py` | Explicit source allowlist and reproducible named archives |
+| Generated output | `dist/` | Ignored builds and package scratch |
 
-`packaging/release.json` reads the product version from `main.go`. Its revision adds a packaging prerelease suffix without relabeling the product as stable. `packaging/source-files.json` is the reviewed publication allowlist; update it after adding/removing committed files. Source/data package payloads preserve this layout.
+`main.go` is the single version source. `packaging/source-files.json` is a reviewed source allowlist; refresh it when adding or removing tracked source. Runtime credentials, databases, caches and build scratch are excluded.
 
-Do not publish .git, runtime data, private directories, credentials, caches or local build scratch. Existing generated installers, minified web assets, checksums and compatibility artwork paths are intentionally retained.
-
-Use `python3 scripts/format_web.py --check` for first-party CSS/JavaScript and plain HTML source (Node.js is a build-time tool only). Prettier 3.7.4 is pinned. Generated HTML/bundles and template expression whitespace are preserved separately.
-
-The ecosystem manager is editable Python in `assets/ecosystem.py`; path migration
-is in `assets/consolidate.py`. Both are embedded by Go and extracted privately at
-runtime. `tests/test_ecosystem.py` uses disposable source/data and service mocks.
+The retired fictional example files are listed in [the cleanup audit](REMOVED-EXAMPLES.md). Their user runtime data is preserved. Use Go formatting and the pinned Ruff checks through `scripts/format_source.py`; no browser-example generation remains.

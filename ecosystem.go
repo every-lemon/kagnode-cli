@@ -2,17 +2,22 @@
 package main
 
 import (
-	"bufio"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 	"unsafe"
 )
+
+var setupRootPattern = regexp.MustCompile(`^/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+$`)
 
 var errSetup = errors.New("open ecosystem setup")
 var errSetupExit = errors.New("close ecosystem setup")
@@ -20,6 +25,9 @@ var errSetupExit = errors.New("close ecosystem setup")
 func ecosystemCommand(args []string) error { return managerCommand("ecosystem.py", args) }
 func coreCommand(args []string) error      { return managerCommand("core_manager.py", args) }
 func managerCommand(module string, args []string) error {
+	if _, err := exec.LookPath("python3"); err != nil {
+		return fmt.Errorf("application and Core management require Python 3.10 or newer; install Python before retrying")
+	}
 	source, err := assets.ReadFile("assets/" + module)
 	if err != nil {
 		return err
@@ -72,6 +80,8 @@ var setupProjects = []setupChoice{
 	{"httpboot", "HTTP Boot", "Boot server · image and device updates stay separate"},
 	{"media", "Media", "Media library · preview; processing must be configured"},
 	{"logos", "Logos", "Artwork and downloadable gallery"},
+	{"entropy", "Entropy", "Local OS-backed randomness service; supplemental research remains unassessed"},
+	{"core", "Core", "Signed shared UI installation and reviewed baseline adoption"},
 	{"cli", "CLI", "Terminal workspace and ecosystem manager"},
 }
 
@@ -205,7 +215,23 @@ func setupPrompt(label, fallback string) (string, error) {
 		fmt.Printf(" [%s]", fallback)
 	}
 	fmt.Print(": ")
-	value, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	var line strings.Builder
+	var err error
+	for {
+		var one [1]byte
+		_, err = io.ReadFull(os.Stdin, one[:])
+		if err != nil {
+			break
+		}
+		if one[0] == '\n' {
+			break
+		}
+		line.WriteByte(one[0])
+		if line.Len() > 1024 {
+			return "", fmt.Errorf("input is too long")
+		}
+	}
+	value := line.String()
 	if err != nil {
 		return "", err
 	}
@@ -229,6 +255,8 @@ func setupExecute(args, followup []string, run func([]string) error) error {
 	return nil
 }
 
+// ecosystemSetup reviews the owning project's actual plan. The CLI never
+// constructs native installer commands or infers a successful service setup.
 func ecosystemSetup() (result error) {
 	defer func() {
 		if errors.Is(result, errSetupExit) || errors.Is(result, io.EOF) {
@@ -240,126 +268,218 @@ func ecosystemSetup() (result error) {
 		if err != nil || project == "" {
 			return err
 		}
-		choices := []setupChoice{{"check", "Check releases", "Read GitHub release information; no installation changes"}, {"install", "Install or update", "Verify source archive and retain previous release/data"}, {"setup", "Configure web service", "Set HTTPS address and local port after installation"}, {"status", "Installation status", "Show files, channel and the last operation"}}
-		if project == "cli" {
-			choices[2] = setupChoice{"activate-cli", "Activate managed CLI", "Add /usr/local/bin/kagnode without replacing existing executables"}
+		if project == "core" {
+			fmt.Println("Use kagnode core --help. Core installation/adoption verifies signed manifests and requires explicit baseline review.")
+			continue
 		}
-		if project == "passwords" || project == "media" || project == "logos" || project == "cli" {
-			choices = append([]setupChoice{{"guided", "Install and set up", "Choose your settings, then install and activate in one workflow"}}, choices...)
-		}
-		if project == "mail" || project == "vpn" || project == "httpboot" {
-			choices = append(choices, setupChoice{"bind-native", "Connect an existing installation", "Recognize this app's native paths and enable its guarded updater"}, setupChoice{"consolidate", "Consolidate application files", "Preview a move with retained originals and compatibility paths"})
-		}
-		if project != "logos" && project != "cli" {
-			choices = append(choices, setupChoice{"enable-panel", "Enable administration updates", "Authorize the local service account to use its update socket"})
-		}
-		if project == "passwords" {
-			choices = append(choices, setupChoice{"bitwarden", "Bitwarden apps & extensions", "Install the separate Vaultwarden engine with a pinned image"})
-		}
-		projectName := project
-		for _, choice := range setupProjects {
-			if choice.id == project {
-				projectName = choice.name
-			}
-		}
-		action, err := setupSelect("KagNode "+projectName, choices)
+		action, err := setupSelect("Manage "+project, []setupChoice{{"plan", "Set up application", "Review the project-owned dependencies, configuration and native changes"}, {"install", "Download verified release", "Install application source; does not claim native setup"}, {"status", "Status", "Inspect installed release and recovery state"}, {"check", "Check releases", "Read published versions"}, {"recover", "Recover setup", "Re-run only an explicitly reviewed recovery plan"}})
 		if err != nil {
 			return err
 		}
 		if action == "" {
 			continue
 		}
-		actionName := action
-		for _, choice := range choices {
-			if choice.id == action {
-				actionName = choice.name
-			}
-		}
-		root, err := setupPrompt("Application root", "/srv/kagnode")
+		root, err := setupPrompt("Application workspace root", "/srv/kagnode")
 		if err != nil {
 			return err
 		}
-		args := []string{"--root", root, action, project}
-		var followup []string
-		if action == "guided" {
-			args = []string{"--root", root, "install", project}
-			if project == "cli" {
-				followup = []string{"--root", root, "activate-cli"}
+		base := []string{"--root", root}
+		if action == "status" || action == "check" {
+			if err = ecosystemCommand(append(base, action, project)); err != nil {
+				fmt.Println(err)
 			}
+			continue
 		}
-		if action == "activate-cli" {
-			args = []string{"--root", root, action}
-		}
-		if action == "check" || action == "install" || action == "bind-native" || action == "guided" {
-			channel, err := setupSelect("Release channel", []setupChoice{{"stable", "Stable", "Published stable releases with compatible manifests"}, {"preview", "Preview", "Explicitly include prereleases and packaging previews"}})
-			if err != nil {
-				return err
+		if action == "install" {
+			ok, e := setupSelect("Download "+project+" under "+root, []setupChoice{{"back", "Back", "Keep files unchanged"}, {"apply", "Install verified source", "Preserve data; service setup is a separate reviewed operation"}})
+			if e != nil {
+				return e
 			}
-			if channel == "" {
+			if ok == "apply" {
+				if e = ecosystemCommand(append(base, "install", project)); e != nil {
+					fmt.Println(e)
+				}
+			}
+			continue
+		}
+		if project == "cli" {
+			fmt.Println("The CLI has no native service setup. Its PATH activation is available through apps activate-cli.")
+			continue
+		}
+		if !setupRootPattern.MatchString(root) || filepath.Clean(root) != root {
+			fmt.Println("Setup roots must use canonical absolute ASCII paths without spaces or controls.")
+			continue
+		}
+		if os.Geteuid() != 0 {
+			fmt.Println("Use sudo kagnode setup for system application setup. Account login remains unprivileged.")
+			continue
+		}
+
+		if _, statErr := os.Lstat(filepath.Join(root, project, "current")); os.IsNotExist(statErr) {
+			if e := ecosystemCommand(append(base, "check", project)); e != nil {
+				fmt.Println(e)
 				continue
 			}
-			args = append(args, "--channel", channel)
-		}
-		if action == "enable-panel" {
-			username, err := setupPrompt("Local account running this web service", "kn-"+project)
-			if err != nil {
-				return err
+			raw, e := os.ReadFile(filepath.Join(root, project, "candidate.json"))
+			if e != nil {
+				fmt.Println("No checked release is available: " + e.Error())
+				continue
 			}
-			args = append(args, "--user", username)
-		}
-		if action == "consolidate" {
-			if err := ecosystemCommand(args); err != nil {
-				return err
+			var candidate struct {
+				ID      int64  `json:"release_id"`
+				Version string `json:"version"`
 			}
-			choice, err := setupSelect("Consolidate "+project+" after reviewing these paths", []setupChoice{{"back", "Back", "Preview only; keep existing paths"}, {"apply", "Apply migration", "Requires stopped services; retain originals and verify every copied file"}})
-			if err != nil {
-				return err
+			if json.Unmarshal(raw, &candidate) != nil || candidate.ID <= 0 {
+				fmt.Println("No valid source release is available.")
+				continue
+			}
+			choice, e := setupSelect("Prepare "+project+" "+candidate.Version, []setupChoice{{"back", "Back", "Keep this system unchanged"}, {"download", "Download this checked source release", "Verify its archive and retain it under the shared root; native setup is reviewed next"}})
+			if e != nil {
+				return e
+			}
+			if choice != "download" {
+				continue
+			}
+			if e = ecosystemCommand(append(base, "install", project, "--release-id", strconv.FormatInt(candidate.ID, 10))); e != nil {
+				fmt.Println(e)
+				continue
+			}
+		}
+		mode := "application"
+		var e error
+		if action != "recover" {
+			modes := []setupChoice{{"application", "Application or data setup", "Project-owned application service or static artwork setup"}, {"native", "Native installation", "Project-owned host setup; native data paths remain"}, {"adopt", "Adopt existing", "Inspect and record an existing installation without relocating its data"}}
+			if project == "mail" || project == "vpn" || project == "httpboot" {
+				modes[0], modes[1] = modes[1], modes[0]
+			}
+			mode, e = setupSelect("Installation target", modes)
+			if e != nil {
+				return e
+			}
+			if mode == "" {
+				continue
+			}
+		}
+
+		directory, e := os.MkdirTemp("", "kagnode-review-")
+		if e != nil {
+			return e
+		}
+		e = func() error {
+			defer os.RemoveAll(directory)
+			config, plan := filepath.Join(directory, "configuration.json"), filepath.Join(directory, "review.json")
+			if e := writePrivate(config, map[string]any{}); e != nil {
+				return e
+			}
+			args := append(append([]string{}, base...), "plan", project, "--mode", mode, "--save-plan", plan)
+			if action == "recover" {
+				args = append(args, "--recover")
+			} else {
+				args = append(args, "--config", config)
+			}
+			if e := ecosystemCommand(args); e != nil {
+				return e
+			}
+			raw, e := os.ReadFile(plan)
+			if e != nil {
+				return e
+			}
+			var review struct {
+				Plan struct {
+					Supported     bool           `json:"supported"`
+					Configuration map[string]any `json:"configuration"`
+					Fields        []struct {
+						Key      string `json:"key"`
+						Label    string `json:"label"`
+						Type     string `json:"type"`
+						Required bool   `json:"required"`
+						Secret   bool   `json:"secret"`
+						Default  any    `json:"default"`
+					} `json:"configuration_fields"`
+				} `json:"plan"`
+			}
+			if e = json.Unmarshal(raw, &review); e != nil {
+				return e
+			}
+			if !review.Plan.Supported {
+				return fmt.Errorf("this project does not support the selected platform/target; no setup was performed")
+			}
+			values := map[string]any{}
+			for _, field := range review.Plan.Fields {
+				label := field.Label
+				if label == "" {
+					label = field.Key
+				}
+				if field.Secret {
+					label += " (private secret file path)"
+				}
+				fallback := ""
+				if value, ok := review.Plan.Configuration[field.Key]; ok {
+					fallback = fmt.Sprint(value)
+				} else if field.Default != nil {
+					fallback = fmt.Sprint(field.Default)
+				}
+				value, e := setupPrompt(label, fallback)
+				if e != nil {
+					return e
+				}
+				if value == "" && !field.Required {
+					continue
+				}
+				if value == "" {
+					return fmt.Errorf("%s is required", field.Key)
+				}
+				var typed any = value
+				if field.Type == "integer" || field.Type == "number" {
+					n, e := strconv.Atoi(value)
+					if e != nil {
+						return fmt.Errorf("%s needs a number", field.Key)
+					}
+					typed = n
+				}
+				if field.Type == "boolean" {
+					b, e := strconv.ParseBool(value)
+					if e != nil {
+						return fmt.Errorf("%s needs true or false", field.Key)
+					}
+					typed = b
+				}
+				values[field.Key] = typed
+			}
+			if e = writePrivate(config, values); e != nil {
+				return e
+			}
+			if e = os.Remove(plan); e != nil {
+				return e
+			}
+			if action == "recover" {
+				args = append(args, "--config", config)
+			}
+			if e = ecosystemCommand(args); e != nil {
+				return e
+			}
+			acknowledgement, e := setupPrompt("Review the complete plan above. Type REVIEW to continue", "")
+			if e != nil {
+				return e
+			}
+			if acknowledgement != "REVIEW" {
+				return nil
+			}
+			choice, e := setupSelect("Review the complete project plan above", []setupChoice{{"back", "Cancel", "No installation changes"}, {"apply", "Apply this exact plan", "Dependencies/configuration/service health must all succeed"}})
+			if e != nil {
+				return e
 			}
 			if choice != "apply" {
-				continue
+				return nil
 			}
-			args = append(args, "--apply")
-		}
-		if action == "setup" || action == "bitwarden" || (action == "guided" && project != "cli") {
-			origin, err := setupPrompt("HTTPS address (for example https://app.example.com)", "")
-			if err != nil {
-				return err
+			operation := "apply"
+			if action == "recover" {
+				operation = "recover"
 			}
-			if action == "guided" {
-				followup = []string{"--root", root, "setup", project, "--origin", origin}
-			} else {
-				args = append(args, "--origin", origin)
-			}
-			if action == "bitwarden" {
-				image, err := setupPrompt("Pinned image (leave empty to resolve the latest stable Vaultwarden release)", "")
-				if err != nil {
-					return err
-				}
-				args = []string{"--root", root, "bitwarden", "--origin", origin, "--apply"}
-				if image != "" {
-					args = append(args, "--image", image)
-				}
-			}
-		}
-		if action != "check" && action != "status" {
-			if os.Geteuid() != 0 {
-				fmt.Println("Run sudo kagnode setup to install or configure applications.")
-				continue
-			}
-			ok, err := setupSelect("Review: "+actionName+" · "+projectName+" in "+root, []setupChoice{{"back", "Back", "Keep the installation unchanged"}, {"apply", "Continue", "Apply this operation; preserve existing vaults and user data"}})
-			if err != nil {
-				return err
-			}
-			if ok != "apply" {
-				continue
-			}
-		}
-		fmt.Println("KagNode. / " + projectName + " / " + actionName)
-		if err = setupExecute(args, followup, ecosystemCommand); err != nil {
-			fmt.Println("Operation failed. Inspect the message above before retrying.")
-		}
-		if _, err = setupPrompt("Press Enter to return to setup", ""); err != nil {
-			return err
+			return ecosystemCommand(append(base, operation, project, "--plan", plan))
+		}()
+		if e != nil {
+			fmt.Println("Setup stopped: " + e.Error())
 		}
 	}
 }

@@ -1,0 +1,17 @@
+# Real application setup
+
+The default root `/srv/kagnode` contains per-project verified source releases, manager state, configuration and rollback records. A project may retain native `/etc`, `/opt` and `/var/lib` locations. The workspace root is not permission to relocate native data. Adopt mode must inspect and record a verified installation without rewriting its data.
+
+Install a checked source release first with `apps install PROJECT`. Then use `kagnode setup` or `apps plan PROJECT --mode native|application|adopt --config PRIVATE_JSON --save-plan PRIVATE_REVIEW`. Configuration and plan files must be private regular single-link files. Secret fields contain paths to private secret files, never plaintext displayed by the CLI. Output files must be new and inside a private directory.
+
+Review dependencies, capabilities, paths, changes and manual steps. Apply with `apps apply PROJECT --plan PRIVATE_REVIEW`. The manager rechecks the exact plan and the owning project repeats the check. A successful exit alone is insufficient: the result must say completed and a separate health call must pass. An interrupted or unhealthy setup records needs_recovery. Review the original plan and run `apps recover PROJECT --plan PRIVATE_REVIEW`; recovery belongs to the project and cannot silently delete data.
+
+The project interface is fixed at `scripts/kagnode-installer.py`. It receives `plan|apply|status|health|recover --request FILE --output FILE`. Schema 1 includes project, 32-hex operation ID, root, mode, typed configuration and reviewed plan SHA-256. Plans declare supported OS/architecture, dependencies, configuration fields, paths, manual steps, health capability and changes. The digest is SHA-256 over sorted compact UTF-8 JSON excluding only plan_sha256. The vendorable protocol helper is `adapters/installer_protocol.py`.
+
+Interactive project plans require a real TTY. The wizard restores cooked terminal input before handing off, and checks actual project health afterward. Leaving an interactive installer incomplete cannot produce a successful setup record. Unsupported releases/platforms fail closed. Mail requires its supported dedicated Ubuntu host. VPN/network and HTTP Boot provisioning remain project-owned and must expose an actual reviewed capability; the CLI cannot infer their options or claim a source download configured them. No HTTP Boot image build, hardware qualification, Media transcoding or live native installation is performed by CLI tests.
+
+CLI binary activation uses `apps activate-cli`; Logos uses its reviewed data-only application adapter, inventory checks and no service/account creation. Core uses the dedicated signed `kagnode core` manager. A release lacking the typed interface is reported explicitly, rather than falling back to a guessed service command.
+
+## Runtime updates after setup
+
+A typed setup copies and owns its runtime independently of the manager's downloaded `current` source. The recorded binding identifies the installed runtime and verification scope. This release refuses to describe a later source/current switch as a runtime upgrade: fresh typed installations require the project's reviewed update capability when available. It preserves the installed code, configuration and data. Existing native installations already bound to their guarded/signed updater keep that established update path. Core UI-only patch policy remains separate.

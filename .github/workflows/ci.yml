@@ -19,7 +19,8 @@ jobs:
           cache: false
       - run: go test -race ./...
       - run: go vet ./...
-      - run: sudo python3 -m unittest discover -s tests -p test_ecosystem.py -v
+      - run: sudo python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - run: python3 tests/tui_pty.py
       - run: bash scripts/build.sh
       - run: cd dist && sha256sum -c SHA256SUMS
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

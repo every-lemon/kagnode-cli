@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"testing"
 	"unicode/utf8"
 )
@@ -69,12 +70,9 @@ func TestOriginValidation(t *testing.T) {
 		}
 	}
 }
-func TestFirstSignInAndPrivateStorage(t *testing.T) {
+func TestLegacyCredentialsAndPrivateStorage(t *testing.T) {
 	testHome(t)
-	if err := demoInstall(); err == nil {
-		t.Fatal("installed without sign-in")
-	}
-	c := credentials{Base: "https://nebulacoder.com", ID: "fictional-account", Name: "Sample", Offline: true}
+	c := credentials{Base: "https://nebulacoder.com", ID: "legacy-subject", Name: "Legacy", Offline: true}
 	if err := saveCredentials(c); err != nil {
 		t.Fatal(err)
 	}
@@ -83,55 +81,54 @@ func TestFirstSignInAndPrivateStorage(t *testing.T) {
 	if info.Mode().Perm() != 0600 {
 		t.Fatal("credentials not private")
 	}
-	if err := demoInstall(); err != nil {
-		t.Fatal(err)
-	}
-	catalog, err := catalog()
-	if err != nil || len(catalog) != 13 {
-		t.Fatal("incomplete catalog", err)
-	}
-	for _, p := range catalog {
-		if _, err := state(p.ID); err != nil {
-			t.Fatal(err)
-		}
+	got, err := readCredentials()
+	if err != nil || got.ID != c.ID || got.Protocol != "" {
+		t.Fatal("legacy credentials changed", err)
 	}
 	os.Chmod(file, 0644)
-	if _, err := readCredentials(); err == nil {
+	if _, err = readCredentials(); err == nil {
 		t.Fatal("accepted exposed credential file")
 	}
 }
-func TestAllProductsResetAndTraversal(t *testing.T) {
-	testHome(t)
-	saveCredentials(credentials{Base: "https://nebulacoder.com", ID: "sample", Offline: true})
-	demoInstall()
-	for _, p := range productIDs {
-		if err := demoCommand([]string{p, "create", "QA Example"}); err != nil {
-			t.Fatal(p, err)
-		}
-		m, _ := state(p)
-		resources := m["resources"].([]any)
-		last := resources[len(resources)-1].(map[string]any)
-		if str(last, "name") != "QA Example" {
-			t.Fatal(p)
-		}
-		if err := demoCommand([]string{p, "delete", str(last, "id")}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if _, err := state("../../account"); err == nil {
-		t.Fatal("path traversal")
-	}
-	if err := demoCommand([]string{"reset"}); err != nil {
+func TestNewDistributionHasNoFictionalAssets(t *testing.T) {
+	names, err := assets.ReadDir("assets")
+	if err != nil {
 		t.Fatal(err)
 	}
-	for _, p := range productIDs {
-		b, err := assets.ReadFile("assets/frame-" + p + ".html")
-		if err != nil || !strings.Contains(string(b), "connect-src &#39;none&#39;") {
-			t.Fatal("missing sandbox", p, err)
+	for _, entry := range names {
+		for _, prefix := range []string{"demo", "frame-", "workspace-", "catalog.json", "index.html"} {
+			if strings.HasPrefix(entry.Name(), prefix) {
+				t.Fatal("retired asset embedded", entry.Name())
+			}
 		}
 	}
-	os.Remove(filepath.Join(pathFor("config"), "account.json"))
-	if err := installed(); err == nil {
-		t.Fatal("offline demos survived local sign-out")
+}
+
+func TestCredentialsRejectNonregularAliasesWithoutHanging(t *testing.T) {
+	testHome(t)
+	if err := saveCredentials(credentials{Base: "https://nebulacoder.com", ID: "legacy"}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(pathFor("config"), "account.json")
+	kept := path + ".kept"
+	if err := os.Link(path, kept); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readCredentials(); err == nil {
+		t.Fatal("hardlinked credentials accepted")
+	}
+	os.Remove(path)
+	if err := os.Symlink(kept, path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readCredentials(); err == nil {
+		t.Fatal("symlink credentials accepted")
+	}
+	os.Remove(path)
+	if err := syscall.Mkfifo(path, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readCredentials(); err == nil {
+		t.Fatal("FIFO credentials accepted")
 	}
 }

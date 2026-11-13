@@ -1,3 +1,9 @@
+# Current and historical operations
+
+CLI 5.0.1 retires all fictional example commands and assets. The old instructions below are retained as historical context; they do not describe the current distribution. Use [real application setup](INSTALLERS.md), [the ecosystem manager](ECOSYSTEM.md), and [browser/account sign-in](ACCOUNT-SYNC.md) for current operations. Existing user runtime data is retained.
+
+---
+
 <!-- Retained operational documentation; historical version labels refer to their original release. -->
 <p align="center"><img src="../assets/kagnode-wordmark.svg" width="440" alt="KagNode. CLI"></p>
 

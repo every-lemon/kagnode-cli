@@ -70,6 +70,47 @@ class ReleaseTests(unittest.TestCase):
                     with self.assertRaises(ValueError, msg=name):
                         release.source_files()
 
+    def test_dirty_source_is_rejected_before_creating_release_output(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            out = Path(temporary) / "release"
+            with patch.object(
+                release.subprocess, "check_output", return_value=" M main.go\n"
+            ):
+                with self.assertRaisesRegex(ValueError, "clean committed"):
+                    release.build(out)
+            self.assertFalse(out.exists())
+
+    def test_source_change_during_build_never_gets_release_manifest(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source.txt"
+            source.write_text("before")
+
+            def git(args, **kwargs):
+                return (
+                    ""
+                    if args[1] == "status"
+                    else "a" * 40
+                    if args[1] == "rev-parse"
+                    else "1794560000"
+                )
+
+            with (
+                patch.object(release.subprocess, "check_output", side_effect=git),
+                patch.object(
+                    release, "source_files", return_value=[("source.txt", source)]
+                ),
+                patch.object(
+                    release,
+                    "archives",
+                    side_effect=lambda *args: source.write_text("changed"),
+                ),
+                patch.object(release, "system_packages"),
+            ):
+                with self.assertRaisesRegex(ValueError, "changed during"):
+                    release.build(root / "out", False)
+            self.assertFalse((root / "out/release-manifest.json").exists())
+
     def test_repository_version_resolves_without_relabeling_product(self):
         cfg, product, version = release.identity()
         if cfg.get("channel") == "stable":
