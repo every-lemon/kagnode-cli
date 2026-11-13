@@ -20,6 +20,8 @@ import (
 
 const profileClient = "kagnode-cli-profile"
 
+var errAuthorizationDenied = errors.New("authorization was declined or expired; local applications remain available")
+
 func loginSecret() (string, error) {
 	var raw [32]byte
 	if _, err := rand.Read(raw[:]); err != nil {
@@ -58,7 +60,7 @@ func callbackValues(r *http.Request, host, issuer, state string) (string, error)
 		if code != "" {
 			return "", errors.New("ambiguous authorization response")
 		}
-		return "", errors.New("authorization was declined or expired; local applications remain available")
+		return "", errAuthorizationDenied
 	}
 	if code == "" || len(code) > 2048 {
 		return "", errors.New("missing authorization code")
@@ -167,7 +169,7 @@ func browserLogin(base string, open func(string) error) error {
 		}
 		code, check := callbackValues(r, listener.Addr().String(), base, state)
 		// Ignore unrelated/forged requests without consuming the legitimate attempt.
-		if check != nil && (r.URL.Query().Get("state") != state || r.URL.Query().Get("iss") != base || r.URL.Query().Get("error") == "") {
+		if check != nil && !errors.Is(check, errAuthorizationDenied) {
 			http.Error(w, "Authorization callback rejected.", 400)
 			return
 		}

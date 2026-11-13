@@ -105,6 +105,22 @@ func TestBrowserLoginUsesPKCEAndPreservesLegacyUntilProof(t *testing.T) {
 				if destination != issuer+"/oauth/authorize?request=one" {
 					t.Error("bad URL")
 				}
+				invalid, _ := url.Parse(str(start, "redirect_uri"))
+				q := invalid.Query()
+				q.Set("iss", issuer)
+				q.Set("state", str(start, "state"))
+				q.Set("error", "access_denied")
+				invalid.RawQuery = q.Encode()
+				forged, _ := http.NewRequest("POST", invalid.String(), nil)
+				forged.Host = "evil.test"
+				response, e := http.DefaultClient.Do(forged)
+				if e != nil {
+					return e
+				}
+				response.Body.Close()
+				if response.StatusCode != 400 {
+					t.Error("malformed denial consumed valid attempt")
+				}
 				for index, state := range []string{"forged", str(start, "state"), str(start, "state")} {
 					u, _ := url.Parse(str(start, "redirect_uri"))
 					q := u.Query()
