@@ -151,10 +151,16 @@ func revokeCredential(c credentials) (bool, error) {
 	return status == 204 && err == nil, err
 }
 func saveSignIn(c credentials) error {
+	unlock, err := credentialLock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	previous, previousError := readCredentials()
 	if err := saveCredentials(c); err != nil {
 		return err
 	}
+	unlock()
 	if previousError == nil && previous.Refresh != "" && previous.Refresh != c.Refresh {
 		if confirmed, _ := revokeCredential(previous); !confirmed {
 			fmt.Println("Your new sign-in is saved. Previous authorization revocation was not confirmed; review connected devices in KagNode Account.")
@@ -375,6 +381,16 @@ func deviceLogin(base string) error {
 	return errors.New("device code expired; run kagnode login again")
 }
 func online(c *credentials) (map[string]any, error) {
+	unlock, err := credentialLock()
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	current, err := readCredentials()
+	if err != nil {
+		return nil, err
+	}
+	*c = current
 	if time.Now().Unix() >= c.Expires-30 {
 		route, client := "/api/cli/token", "kagnode-cli"
 		if c.Protocol == "account-sync" {
@@ -417,6 +433,11 @@ func online(c *credentials) (map[string]any, error) {
 	return m, nil
 }
 func logout() error {
+	unlock, err := credentialLock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	c, err := readCredentials()
 	if err == nil {
 		confirmed, _ := revokeCredential(c)

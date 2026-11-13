@@ -8,6 +8,8 @@
   "CHANGELOG.md",
   "LICENSE",
   "README.md",
+  "account_lock.go",
+  "account_lock_test.go",
   "account_sync.go",
   "account_sync_test.go",
   "adapters/installer_protocol.py",

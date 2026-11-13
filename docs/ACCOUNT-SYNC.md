@@ -9,3 +9,5 @@ The first exchange requires a fresh proof bound to issuer, subject, client, loop
 `kagnode account sync on|off|status` controls display name/photo refresh; installation administrators can set `KAGNODE_ACCOUNT_SYNC=off`. It does not revoke sign-in or gate local application setup. `kagnode logout` attempts online revocation, reports uncertainty and removes local credentials. It preserves application data and old example files.
 
 Credentials remain at the established XDG config path with mode0600. The keyboard TUI renders only sanitized profile text. No account requirement is imposed on application installation or local administration. Tests use fictional isolated issuers; they do not log in to production.
+
+Credential refresh, account replacement and logout use a stable private cross-process control. A conflicting operation returns a retry message instead of overwriting another account's tokens. Refresh rereads the current committed identity while holding that control; stale callers cannot put a previous account back. Unsafe control symlinks, FIFOs and hardlinks fail closed without altering their contents.

@@ -149,11 +149,7 @@ func serveAccountProfile(w http.ResponseWriter, r *http.Request, origin string) 
 	}
 	warning := ""
 	if profileSyncEnabled() && (action == "start" || action == "refresh" || action == "state" && time.Now().Unix()-c.ProfileUpdated > 900) {
-		var profile map[string]any
-		profile, err = online(&c)
-		if err == nil {
-			err = cacheProfile(&c, profile)
-		}
+		_, err = online(&c)
 		if err != nil {
 			warning = "Profile could not refresh. Your cached account and local applications remain available."
 		}
