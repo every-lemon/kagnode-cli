@@ -173,10 +173,7 @@ func tuiArguments(command, product string) ([]string, error) {
 			app = parts[1]
 		}
 		if app == "core" {
-			if name == "status" {
-				return []string{"core", "status"}, nil
-			}
-			return nil, fmt.Errorf("use /core check APP to check signed Core updates for a bound application")
+			return nil, fmt.Errorf("use /core %s APP for a bound application; Core is managed separately from application source", name)
 		}
 		return []string{"apps", name, app}, nil
 	default:

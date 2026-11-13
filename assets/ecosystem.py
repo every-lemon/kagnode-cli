@@ -683,7 +683,7 @@ class Manager:
             "id": name,
             **CATALOG[name],
             "root": str(path),
-            "manager_command": "kagnode core status" if name == "core" else None,
+            "manager_command": "kagnode core status APP" if name == "core" else None,
             "needs_recovery": recovery,
             "in_progress": in_progress,
             "metadata_errors": errors,
@@ -723,7 +723,7 @@ class Manager:
                 "id": name,
                 **CATALOG[name],
                 "can_apply": False,
-                "message": "Core uses its signed manager, not application source installation. Use kagnode core status, then core check APP for a bound application or core install VERSION for an explicitly reviewed signed release.",
+                "message": "Core uses its signed manager, not application source installation. Use kagnode core bind APP --user USER --lock-file DECLARATION, then core status APP, core check APP and core apply APP for verified UI patches.",
             }
         try:
             state = read(path / "state.json", {})

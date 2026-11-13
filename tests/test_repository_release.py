@@ -80,6 +80,37 @@ class ReleaseTests(unittest.TestCase):
                     release.build(out)
             self.assertFalse(out.exists())
 
+    def test_source_change_during_build_never_gets_release_manifest(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source.txt"
+            source.write_text("before")
+
+            def git(args, **kwargs):
+                return (
+                    ""
+                    if args[1] == "status"
+                    else "a" * 40
+                    if args[1] == "rev-parse"
+                    else "1794560000"
+                )
+
+            with (
+                patch.object(release.subprocess, "check_output", side_effect=git),
+                patch.object(
+                    release, "source_files", return_value=[("source.txt", source)]
+                ),
+                patch.object(
+                    release,
+                    "archives",
+                    side_effect=lambda *args: source.write_text("changed"),
+                ),
+                patch.object(release, "system_packages"),
+            ):
+                with self.assertRaisesRegex(ValueError, "changed during"):
+                    release.build(root / "out", False)
+            self.assertFalse((root / "out/release-manifest.json").exists())
+
     def test_repository_version_resolves_without_relabeling_product(self):
         cfg, product, version = release.identity()
         if cfg.get("channel") == "stable":
