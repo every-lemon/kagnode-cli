@@ -10,7 +10,7 @@ A keyboard-only Linux application manager and KagNode Account client. Review rea
 
 **5.0.1** is the coordinated stable CLI release, replacing fictional examples with real application setup and browser PKCE sign-in.
 
-Stable scope covers the CLI and tested installer orchestration. Each project declares its supported operating systems and setup modes; native services and hardware retain separate verification boundaries. See [verification](docs/VERIFICATION.md) and [changelog](CHANGELOG.md).
+Stable scope covers the CLI and tested installer orchestration. Each project declares its supported operating systems and setup modes; native services and hardware retain separate verification boundaries. Fresh typed runtimes require a project-owned reviewed update interface; switching downloaded source is explicitly blocked from pretending to upgrade them. Existing guarded native updaters remain supported. See [verification](docs/VERIFICATION.md) and [changelog](CHANGELOG.md).
 
 ## Features
 
@@ -41,6 +41,8 @@ Download from [GitHub Releases](https://github.com/every-lemon/kagnode-cli/relea
 | Linux CLI binaries | `.deb`, `.rpm`, `.tar.xz`, `.tar.gz`, `.zip` | amd64 and arm64 |
 
 
+
+Linux arm64 binaries are cross-built; disposable package lifecycle checks run on amd64. Physical/native service qualification remains separate.
 
 Source packages install under `/usr/share/kagnode/`; they do not replace an existing application, migrate data, start services or configure networking. CLI binary packages install /usr/bin/kagnode. See [package details](docs/PACKAGING.md).
 

@@ -37,17 +37,21 @@ mail storage or native service configuration.
 
 ## Available operations
 
-| Application | Release check and verified source install | Managed service setup/update |
+| Application | Setup capability | Boundary |
 | --- | --- | --- |
-| Passwords | Yes | Python virtual environment, loopback web service |
-| Media | Yes | Node.js 24 web service; native codecs remain separate |
-| Logos | Yes | Data-only package; no service is provisioned |
-| CLI | Yes | Go source build; opt-in PATH activation |
-| Entropy | Yes | Project-owned local-service capability; supplemental research remains unassessed |
-| Core | Dedicated signed manager | Explicit reviewed baseline adoption; backend helpers never auto-upgrade |
-| Mail | Yes | Bound existing installation: guarded web-code updates |
-| VPN | Yes | Bound existing installation: signed native updater |
-| HTTP Boot | Yes | Bound existing installation: web console only; images separate |
+| Passwords | Project-owned Python application service in shared root | Globally usable Python 3.12+; encrypted vault initialization stays in the web app |
+| Media | Project-owned Node.js 24 web application in shared root | No worker activation, FFmpeg/transcoding or codec qualification |
+| Entropy | Project-owned loopback OS-backed service in shared root | Globally usable Rust 1.88+; no video, enclave or entropy-quality qualification |
+| Logos | Data-only artwork/viewer copy with exact inventory health | No accounts, web service or native daemon |
+| CLI | Linux amd64/arm64 binary or reviewed Go source build | Opt-in PATH activation; preserve existing executable ownership |
+| Core | Dedicated signed manager and explicit reviewed helper import | UI patches cannot replace a backend helper |
+| Mail | Dedicated Ubuntu 24.04 native installer, reviewed noninteractive fields | DNS, external TLS and real delivery remain separate checks; existing guarded web updater retained |
+| VPN | Reviewed native installer handoff with a real TTY | Network choices remain in the owning console; existing signed updater retained |
+| HTTP Boot | Reviewed interactive Server authority console | Existing native Server package is required; no images, Client, Builder or hardware qualification |
+
+Application-mode adapters gate Ubuntu 24.04 and Debian 12/13 against their actual prerequisite versions and permissions. Native adapters retain their owning project's stricter OS/architecture limits. A failed or exited interactive installer never becomes a successful setup without health verification.
+
+Fresh typed runtimes record their own installed-source/runtime identity. This release blocks legacy source/current switching from claiming to update those separate runtimes; their project-owned reviewed update capability is not yet available. Existing installations already bound to guarded/signed native updates retain that path.
 
 Mail and VPN's original provisioners expect a dedicated supported host. Downloading
 their source does not provision a mail/VPN server or resolve port, firewall and DNS

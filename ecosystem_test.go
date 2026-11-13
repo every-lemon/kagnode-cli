@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"errors"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -64,5 +66,19 @@ func TestAppsRoutingDoesNotUseShell(t *testing.T) {
 	}
 	if _, err = assets.ReadFile("assets/ecosystem.py"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestEmbeddedInstallerProtocolMatchesVendoredSource(t *testing.T) {
+	embedded, err := assets.ReadFile("assets/installer_protocol.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := os.ReadFile("adapters/installer_protocol.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(embedded, source) {
+		t.Fatal("embedded and project-vendored installer protocols diverged")
 	}
 }

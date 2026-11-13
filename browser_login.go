@@ -131,6 +131,8 @@ func browserLogin(base string, open func(string) error) error {
 	results := make(chan outcome, 1)
 	var mu sync.Mutex
 	used := false
+	delivered := false
+	var pending outcome
 	expires := num(m, "expires_in")
 	if expires <= 0 || expires > 600 {
 		return errors.New("invalid authorization deadline")
@@ -141,6 +143,28 @@ func browserLogin(base string, open func(string) error) error {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'")
+		if r.URL.Path == "/auth/kagnode/complete" {
+			peer, _, splitErr := net.SplitHostPort(r.RemoteAddr)
+			if r.Method != "GET" || r.Host != listener.Addr().String() || splitErr != nil || !net.ParseIP(peer).IsLoopback() || r.URL.RawQuery != "" {
+				http.Error(w, "Completion rejected.", 400)
+				return
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if !used || time.Now().After(deadline) {
+				http.Error(w, "No active authorization.", 404)
+				return
+			}
+			fmt.Fprintln(w, "Return to the KagNode terminal to complete sign-in.")
+			if flush, ok := w.(http.Flusher); ok {
+				flush.Flush()
+			}
+			if !delivered {
+				delivered = true
+				results <- pending
+			}
+			return
+		}
 		code, check := callbackValues(r, listener.Addr().String(), base, state)
 		// Ignore unrelated/forged requests without consuming the legitimate attempt.
 		if check != nil && (r.URL.Query().Get("state") != state || r.URL.Query().Get("iss") != base || r.URL.Query().Get("error") == "") {
@@ -154,8 +178,8 @@ func browserLogin(base string, open func(string) error) error {
 			return
 		}
 		used = true
-		results <- outcome{code, check}
-		fmt.Fprintln(w, "Return to the KagNode terminal to complete sign-in.")
+		pending = outcome{code, check}
+		http.Redirect(w, r, "/auth/kagnode/complete", http.StatusSeeOther)
 	})
 	go func() { _ = server.Serve(listener) }()
 	defer server.Close()
@@ -188,6 +212,13 @@ func browserLogin(base string, open func(string) error) error {
 	if status != 200 {
 		return fmt.Errorf("authorization exchange failed (%d); start a new sign-in", status)
 	}
+	issued := credentials{Protocol: "account-sync", Base: base, Access: str(m, "access_token"), Refresh: str(m, "refresh_token")}
+	committed := false
+	defer func() {
+		if !committed && issued.Refresh != "" {
+			_, _ = revokeCredential(issued)
+		}
+	}()
 	subject, err := validateLoginProof(m, base, origin, nonce, time.Now().Unix())
 	if err != nil {
 		return err
@@ -214,6 +245,7 @@ func browserLogin(base string, open func(string) error) error {
 	if err = saveSignIn(c); err != nil {
 		return err
 	}
+	committed = true
 	fmt.Println("Signed in to KagNode Account.")
 	return nil
 }

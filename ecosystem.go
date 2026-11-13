@@ -10,11 +10,14 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
 	"unsafe"
 )
+
+var setupRootPattern = regexp.MustCompile(`^/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+$`)
 
 var errSetup = errors.New("open ecosystem setup")
 var errSetupExit = errors.New("close ecosystem setup")
@@ -22,6 +25,9 @@ var errSetupExit = errors.New("close ecosystem setup")
 func ecosystemCommand(args []string) error { return managerCommand("ecosystem.py", args) }
 func coreCommand(args []string) error      { return managerCommand("core_manager.py", args) }
 func managerCommand(module string, args []string) error {
+	if _, err := exec.LookPath("python3"); err != nil {
+		return fmt.Errorf("application and Core management require Python 3.10 or newer; install Python before retrying")
+	}
 	source, err := assets.ReadFile("assets/" + module)
 	if err != nil {
 		return err
@@ -298,6 +304,10 @@ func ecosystemSetup() (result error) {
 		}
 		if project == "cli" {
 			fmt.Println("The CLI has no native service setup. Its PATH activation is available through apps activate-cli.")
+			continue
+		}
+		if !setupRootPattern.MatchString(root) || filepath.Clean(root) != root {
+			fmt.Println("Setup roots must use canonical absolute ASCII paths without spaces or controls.")
 			continue
 		}
 		if os.Geteuid() != 0 {

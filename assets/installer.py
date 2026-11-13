@@ -91,7 +91,7 @@ def invoke(adapter, action, request):
                 handlers[sig] = signal.signal(sig, interrupted)
         try:
             code = child.wait(timeout=1800 if action in ("apply", "recover") else 120)
-            if code:
+            if code and not outgoing.exists():
                 raise ProtocolError(
                     "The project installer failed; inspect its private recovery log"
                 )
@@ -126,6 +126,13 @@ def invoke(adapter, action, request):
         ):
             raise ProtocolError(
                 "Installer returned an invalid or unrelated operation result"
+            )
+        if code and not (
+            action in ("apply", "recover")
+            and result.get("state") in ("failed", "needs_recovery")
+        ):
+            raise ProtocolError(
+                "The project installer failed; inspect its private recovery log"
             )
         return result
 
@@ -239,6 +246,7 @@ def operate(
                     "plan_sha256": plan["plan_sha256"],
                 },
             )
+            result = None
             try:
                 result = invoke(adapter, action, request)
                 if (
@@ -266,6 +274,7 @@ def operate(
                     journal,
                     {
                         "state": "needs_recovery",
+                        "result": result,
                         "request": request,
                         "plan_sha256": plan["plan_sha256"],
                     },

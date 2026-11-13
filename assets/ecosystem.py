@@ -670,10 +670,20 @@ class Manager:
                 "message": "Use sudo to inspect this installation's private status.",
                 "can_apply": False,
             }
+        setup = metadata["setup-operation.json"]
+        project_owned = setup.get("state") == "completed" and not state.get(
+            "native_binding"
+        )
+        binding = (
+            setup.get("result", {}).get("binding")
+            if isinstance(setup.get("result"), dict)
+            else None
+        )
         return {
             "id": name,
             **CATALOG[name],
             "root": str(path),
+            "manager_command": "kagnode core status" if name == "core" else None,
             "needs_recovery": recovery,
             "in_progress": in_progress,
             "metadata_errors": errors,
@@ -689,9 +699,15 @@ class Manager:
             "channel": state.get("channel", "stable"),
             "operation": metadata["operation.json"],
             "service_setup": metadata["setup-operation.json"],
+            "runtime_binding": binding,
+            "runtime_update_requires_review": project_owned,
+            "update_blocked_reason": "Project-owned runtime updates require its reviewed update interface; changing downloaded source cannot update this running service."
+            if project_owned
+            else None,
             "candidate": metadata["candidate.json"],
             "adapter": state.get("adapter", "managed"),
             "can_apply": name != "core"
+            and not project_owned
             and not recovery
             and not in_progress
             and (
@@ -702,6 +718,13 @@ class Manager:
 
     def check(self, name, channel=None):
         name, path = self.project(name)
+        if name == "core":
+            return {
+                "id": name,
+                **CATALOG[name],
+                "can_apply": False,
+                "message": "Core uses its signed manager, not application source installation. Use kagnode core status, then core check APP for a bound application or core install VERSION for an explicitly reviewed signed release.",
+            }
         try:
             state = read(path / "state.json", {})
         except PermissionError:
@@ -851,6 +874,11 @@ class Manager:
         with self.lock(name):
             existing = read(path / "state.json", {})
             self.require_recovered(path, existing)
+            setup = read(path / "setup-operation.json", {})
+            if setup.get("state") == "completed" and not existing.get("native_binding"):
+                raise ManagerError(
+                    "This runtime is owned by its project installer. Source/current replacement is not a runtime update. Use the project's reviewed update interface when available; existing runtime and data were retained."
+                )
             candidate = self.check(name, channel)
             if not candidate.get("release_id"):
                 raise ManagerError(candidate["message"])

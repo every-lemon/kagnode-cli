@@ -1,8 +1,14 @@
 {
   "schema": 1,
   "repository": "every-lemon/kagnode-core",
-  "version": "1.2.1",
-  "source_commit": "f1dc14410457163ab07de6f3b94a7535c7fe614e",
+  "version": "5.0.6",
+  "source_commit": "01010153018655c80a0ac3c3e705f03cd73341f0",
   "source_path": "packages/python/manager.py",
-  "sha256": "5f36201b983f435a3b5362d9871f3e9165f6f3d41315409ab92d4e640a133d85"
+  "sha256": "5f765676da8019242f6fd36ffe097da09369c3bc7e39ad265f6f1ae63726d048",
+  "public_key_sha256": "b08876f35ba08fcf0ecbb90423115fbe2b71ab9ebd6134a748599f978b450ddf",
+  "manager_api": 1,
+  "upgrade_policy": "explicit-review",
+  "release_manifest_sha256": "3d2c29f7dfca43f61335f7cfb056f007f4db2b3110152c26ab58522f1c659bcd",
+  "source_archive_sha256": "1bed4bc8be2d438c856cd7fa2df6fdf1adfc3ad3ad55b1e6ff6424a15296606d",
+  "python_wheel_sha256": "c9743e9e4a7e9d2f62403d2b8d3860d45f487b2ee84a758a2b2f358e9c8fa382"
 }

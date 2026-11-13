@@ -135,6 +135,10 @@ func (m *tuiModel) add(text string) {
 func (m *tuiModel) identity() {
 	m.account = "Not signed in"
 	if c, err := readCredentials(); err == nil {
+		if !profileSyncEnabled() {
+			m.account = "KagNode Account"
+			return
+		}
 		m.account = tuiSafe(c.Name)
 		if m.account == "" {
 			m.account = "KagNode account"
@@ -167,6 +171,12 @@ func tuiArguments(command, product string) ([]string, error) {
 		app := product
 		if len(parts) == 2 {
 			app = parts[1]
+		}
+		if app == "core" {
+			if name == "status" {
+				return []string{"core", "status"}, nil
+			}
+			return nil, fmt.Errorf("use /core check APP to check signed Core updates for a bound application")
 		}
 		return []string{"apps", name, app}, nil
 	default:
@@ -574,6 +584,8 @@ func terminalUI() error {
 				go func(args []string) {
 					writer := &tuiWriter{events: events}
 					child := exec.CommandContext(ctx, executable, args...)
+					child.Cancel = func() error { return child.Process.Signal(syscall.SIGTERM) }
+					child.WaitDelay = 30 * time.Second
 					child.Stdout = writer
 					child.Stderr = writer
 					runErr := child.Run()

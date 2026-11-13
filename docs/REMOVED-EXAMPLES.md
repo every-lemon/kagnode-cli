@@ -157,3 +157,5 @@ The CLI no longer hosts a browser UI, so its obsolete UI declaration and corresp
 - `vendor/core-source/web/updates.js`
 
 - `docs/SCROLLING.md` — retired browser-only scrolling documentation; no remaining references.
+
+- `scripts/format_web.py` — no remaining CLI browser source; the unused Node formatting CI setup is removed too.

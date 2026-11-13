@@ -20,6 +20,7 @@ class Issuer(BaseHTTPRequestHandler):
     attempt = {}
     denied = False
     token_used = False
+    cancel_count = 0
 
     def log_message(self, *args):
         pass
@@ -111,6 +112,7 @@ class Issuer(BaseHTTPRequestHandler):
                 }
             )
         elif self.path.endswith("/browser/cancel"):
+            type(self).cancel_count += 1
             self.respond({})
         else:
             self.send_error(404)
@@ -164,6 +166,8 @@ with tempfile.TemporaryDirectory(prefix="kagnode-browser-login-") as temporary:
                 page = browser.new_page()
                 page.goto(urlfile.read_text())
                 page.get_by_role("button", name="Approve sign-in").click()
+                page.wait_for_url("**/auth/kagnode/complete")
+                assert urlsplit(page.url).query == ""
                 out, err = process.communicate(timeout=10)
                 assert (process.returncode == 0) == (not denied), (out, err)
                 account = config / "kagnode/cli/account.json"
@@ -182,10 +186,41 @@ with tempfile.TemporaryDirectory(prefix="kagnode-browser-login-") as temporary:
                 if process.poll() is None:
                     process.kill()
                     process.wait()
+        before_cancel = Issuer.cancel_count
+        urlfile = folder / "cancel-url"
+        config = folder / "cancelled"
+        config.mkdir()
+        env = {
+            **os.environ,
+            "XDG_CONFIG_HOME": str(config),
+            "PATH": str(folder) + os.pathsep + os.environ["PATH"],
+            "KAGNODE_TEST_URL": str(urlfile),
+        }
+        process = subprocess.Popen(
+            [str(binary), "login", "--server", Issuer.origin],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            deadline = time.monotonic() + 10
+            while not urlfile.exists() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            assert urlfile.exists(), "cancelled browser initiation missing"
+            process.terminate()
+            out, err = process.communicate(timeout=10)
+            assert process.returncode != 0 and "cancelled" in err
+            assert Issuer.cancel_count == before_cancel + 1
+            assert not (config / "kagnode/cli/account.json").exists()
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
         browser.close()
     server.shutdown()
     server.server_close()
 print(
-    "PASS native CLI browser PKCE return: success, denial, private credential persistence; "
+    "PASS native CLI browser PKCE return: success, denial, cancellation, private credential persistence; "
     + engine
 )

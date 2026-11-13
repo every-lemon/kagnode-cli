@@ -28,6 +28,7 @@ Maintainer: KagNode contributors
 Description: KagNode real application management and account sign-in
 Section: utils
 Priority: optional
+Recommends: python3 (>= 3.10)
 CONTROL
   find "$deb" -type d -exec chmod 755 {} +
   find "$deb" -type f -exec chmod 644 {} +

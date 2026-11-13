@@ -75,7 +75,16 @@ def read_request(path, project):
         value.get("configuration", {}), dict
     ):
         raise ProtocolError("Invalid installation mode or configuration")
-    root = Path(value.get("root", ""))
+    raw_root = value.get("root", "")
+    if not isinstance(raw_root, str) or not re.fullmatch(
+        r"/(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+", raw_root
+    ):
+        raise ProtocolError(
+            "Workspace root must use absolute ASCII path components without whitespace or controls"
+        )
+    root = Path(raw_root)
+    if str(root) != raw_root:
+        raise ProtocolError("Workspace root must be canonical")
     if (
         not root.is_absolute()
         or ".." in root.parts

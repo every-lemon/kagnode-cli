@@ -47,13 +47,14 @@
   "packaging/source-files.json",
   "requirements-format.txt",
   "scripts/build.sh",
+  "scripts/bundle_core_manager.py",
   "scripts/format_source.py",
-  "scripts/format_web.py",
   "scripts/package_smoke.py",
   "scripts/release.py",
   "scripts/repository_check.py",
   "scripts/verify_packages.py",
   "tests/browser_login.py",
+  "tests/test_core_bundle.py",
   "tests/test_ecosystem.py",
   "tests/test_installer.py",
   "tests/test_repository_release.py",
@@ -62,5 +63,7 @@
   "tui_test.go",
   "vendor/core-source/LICENSE",
   "vendor/core-source/assets/release-public.pem",
-  "vendor/core-source/packages/python/manager.py"
+  "vendor/core-source/packages/python/manager.py",
+  "vendor/core-source/release/release-manifest.json",
+  "vendor/core-source/release/release-manifest.sig"
 ]

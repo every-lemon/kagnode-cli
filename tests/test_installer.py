@@ -125,6 +125,29 @@ class InstallerTests(unittest.TestCase):
         with self.assertRaisesRegex(ProtocolError, "outside"):
             installer.operate(self.manager, "mail", "plan")
 
+    def test_unit_paths_reject_controls_whitespace_and_normalization(self):
+        request = {
+            "schema": 1,
+            "project": "mail",
+            "operation_id": "a" * 32,
+            "mode": "native",
+            "configuration": {},
+        }
+        for root in (
+            "/srv/unsafe path",
+            "/srv/new\nExecStart=evil",
+            "/srv//double",
+            "/srv/./dot",
+            "/srv/../outside",
+            "/srv/非ASCII",
+        ):
+            self.review.write_text(json.dumps({**request, "root": root}))
+            self.review.chmod(0o600)
+            with self.assertRaises(ProtocolError):
+                read_request(self.review, "mail")
+        self.review.write_text(json.dumps({**request, "root": str(self.root)}))
+        self.assertEqual(read_request(self.review, "mail")["root"], str(self.root))
+
     def test_private_files_reject_symlinks_hardlinks_and_fifo_without_hanging(self):
         source = Path(self.temporary.name) / "input.json"
         source.write_text("{}")
@@ -161,6 +184,30 @@ class InstallerTests(unittest.TestCase):
                 [call.args[1] for call in invoked.call_args_list], ["plan", "plan"]
             )
         self.assertFalse((self.app / "setup-operation.json").exists())
+
+    def test_project_runtime_cannot_be_misreported_as_source_update(self):
+        (self.app / "setup-operation.json").write_text(
+            json.dumps(
+                {
+                    "state": "completed",
+                    "result": {
+                        "binding": {
+                            "code": "/owned/runtime",
+                            "update_capability": False,
+                        }
+                    },
+                }
+            )
+        )
+        before = (self.app / "state.json").read_bytes()
+        result = self.manager.status("mail")
+        self.assertTrue(result["runtime_update_requires_review"])
+        self.assertFalse(result["can_apply"])
+        with patch.object(self.manager, "check") as checked:
+            with self.assertRaisesRegex(eco.ManagerError, "not a runtime update"):
+                self.manager.install("mail")
+            checked.assert_not_called()
+        self.assertEqual((self.app / "state.json").read_bytes(), before)
 
     def test_bad_setup_journal_is_visible_and_blocks_updates(self):
         (self.app / "setup-operation.json").write_text('{"state":"invented-success"}')
