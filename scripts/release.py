@@ -244,6 +244,14 @@ cp -a {root}/. %{{buildroot}}/
 
 
 def build(out, native_cli=True):
+    if subprocess.check_output(
+        ["git", "status", "--porcelain", "--untracked-files=normal"],
+        cwd=ROOT,
+        text=True,
+    ).strip():
+        raise ValueError(
+            "Release builds require a clean committed source tree; commit reviewed changes before creating provenance"
+        )
     cfg, product, version = identity()
     out = out.resolve()
     if out.exists() and any(out.iterdir()):

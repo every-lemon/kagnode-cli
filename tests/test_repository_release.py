@@ -70,6 +70,16 @@ class ReleaseTests(unittest.TestCase):
                     with self.assertRaises(ValueError, msg=name):
                         release.source_files()
 
+    def test_dirty_source_is_rejected_before_creating_release_output(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            out = Path(temporary) / "release"
+            with patch.object(
+                release.subprocess, "check_output", return_value=" M main.go\n"
+            ):
+                with self.assertRaisesRegex(ValueError, "clean committed"):
+                    release.build(out)
+            self.assertFalse(out.exists())
+
     def test_repository_version_resolves_without_relabeling_product(self):
         cfg, product, version = release.identity()
         if cfg.get("channel") == "stable":

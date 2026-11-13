@@ -348,7 +348,11 @@ func ecosystemSetup() (result error) {
 		mode := "application"
 		var e error
 		if action != "recover" {
-			mode, e = setupSelect("Installation target", []setupChoice{{"native", "Native installation", "Project-owned supported host setup; existing native data paths remain"}, {"application", "Application service", "Project-owned source/service setup"}, {"adopt", "Adopt existing", "Inspect and record an existing installation without relocating its data"}})
+			modes := []setupChoice{{"application", "Application or data setup", "Project-owned application service or static artwork setup"}, {"native", "Native installation", "Project-owned host setup; native data paths remain"}, {"adopt", "Adopt existing", "Inspect and record an existing installation without relocating its data"}}
+			if project == "mail" || project == "vpn" || project == "httpboot" {
+				modes[0], modes[1] = modes[1], modes[0]
+			}
+			mode, e = setupSelect("Installation target", modes)
 			if e != nil {
 				return e
 			}
