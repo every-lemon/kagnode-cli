@@ -9,5 +9,5 @@
   "automatic_ui_patches": true,
   "backend_updates": "reviewed",
   "fallback_manifest_sha256": "6ffc01f0178b3aefabeea0edce3f8c5298f71d6042a812db146188361880e121",
-  "source_commit": "60b697f38b1d9903dbe5f2d39bdd16e65c572fbb"
+  "source_commit": "efc8e25179932d85e7f9a5edc779a5b27534a919"
 }
