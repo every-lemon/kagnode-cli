@@ -2224,7 +2224,7 @@ def main():
         "--channel", choices=["stable", "beta", "preview"], default=None
     )
     policy = sub.add_parser("policy")
-    policy.add_argument("project", choices=list(CATALOG))
+    policy.add_argument("project", choices=list(CATALOG) + ["pm", "authenticator"])
     policy.add_argument("--channel", choices=["stable", "beta"])
     policy.add_argument("--mode", choices=["manual", "auto"])
     policy.add_argument("--start", default="03:00")
@@ -2232,7 +2232,7 @@ def main():
     policy.add_argument("--timezone", default="UTC")
     policy.add_argument("--revision", type=int)
     panel = sub.add_parser("enable-panel")
-    panel.add_argument("project", choices=list(CATALOG))
+    panel.add_argument("project", choices=list(CATALOG) + ["pm", "authenticator"])
     panel.add_argument("--user", required=True)
     for command in ("status", "check", "install", "update"):
         p = sub.add_parser(command)
@@ -2245,7 +2245,7 @@ def main():
             p.add_argument("--release-id", type=int)
     for command in ("plan", "apply", "health", "recover", "installer-status"):
         p = sub.add_parser(command)
-        p.add_argument("project", choices=list(CATALOG))
+        p.add_argument("project", choices=list(CATALOG) + ["pm", "authenticator"])
         p.add_argument(
             "--mode", choices=["native", "application", "adopt"], default="application"
         )
@@ -2261,7 +2261,7 @@ def main():
             help="Review project-owned recovery instead of fresh setup",
         )
     p = sub.add_parser("setup")
-    p.add_argument("project", choices=list(CATALOG))
+    p.add_argument("project", choices=list(CATALOG) + ["pm", "authenticator"])
     p.add_argument("--origin", required=True)
     p.add_argument("--port", type=int)
     p = sub.add_parser("bitwarden")
