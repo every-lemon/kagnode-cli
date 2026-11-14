@@ -42,3 +42,9 @@ Recovery keys default outside application state and backup payloads at `/var/lib
 ## HA declarations
 
 `kagnode ha plan --file cluster.json` validates identities, failure domains, VLAN IDs, virtual IPs and selected applications. It reports unresolved networking, quorum, storage, fencing and adapter checks. Neither the terminal nor the browser can bypass those checks by submitting a boolean. Current source has no live HA activation operation.
+
+## Terminal operations
+
+Run `kagnode` or `kagnode tui --no-mouse`. Search with `/`, open an application with Enter, and return with Left/Escape. Within an application, `i` inspects enrolled services and `h` reads operation history. `s`, `t`, and `r` request start, stop and restart plans. Only `y` confirms the displayed plan; Escape cancels. The broker rechecks the plan hash and definitions before applying it. Page Up/Down scroll long details. Ctrl+C and `q` restore terminal settings on exit. The workspace `w` key changes only the Daemon dashboard preference.
+
+Missing enrollment, broker failures and uncertain operations appear as explicit results. No application is installed or configured merely by opening its folder. Remote nodes and full configuration wizards remain separate migration gates.

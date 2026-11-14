@@ -264,7 +264,18 @@ async fn plan(product: &str, operation: Operation) -> Result<Value> {
     value["sha256"] = json!(sha(&serde_json::to_vec(&value)?));
     Ok(value)
 }
-async fn handle(db: &mut rusqlite::Connection, request: Request, peer: u32) -> Result<Value> {
+async fn handle(db: &mut rusqlite::Connection, mut request: Request, peer: u32) -> Result<Value> {
+    let product = match &mut request {
+        Request::History { product }
+        | Request::Status { product }
+        | Request::Plan { product, .. }
+        | Request::Apply { product, .. }
+        | Request::Resolve { product, .. } => product,
+    };
+    *product = crate::catalog::product(product)
+        .ok_or_else(|| anyhow::anyhow!("Unknown application"))?
+        .id
+        .to_owned();
     match request {
         Request::History { product } => {
             ensure!(
@@ -403,6 +414,10 @@ async fn handle(db: &mut rusqlite::Connection, request: Request, peer: u32) -> R
                     && !reason.chars().any(char::is_control),
                 "Provide the operation identity and a useful inspection reason"
             );
+            ensure!(db.query_row(
+                "SELECT count(*) FROM operations WHERE id=?1 AND product=?2 AND state='uncertain'",
+                rusqlite::params![request_id, product], |r| r.get::<_, i64>(0)
+            )? == 1, "No matching uncertain operation exists for this application");
             let current = plan(&product, Operation::Start).await?;
             ensure!(
                 current["sha256"] == inspection_sha256,
@@ -427,7 +442,7 @@ pub async fn serve(root: &Path, allowed_uid: u32) -> Result<()> {
     );
     for p in root.ancestors().filter(|p| p.exists()) {
         ensure!(
-            !p.is_symlink() && p.metadata()?.uid() == 0,
+            !p.is_symlink() && p.metadata()?.uid() == 0 && p.metadata()?.mode() & 0o022 == 0,
             "Unsafe broker state directory"
         );
     }
@@ -435,7 +450,17 @@ pub async fn serve(root: &Path, allowed_uid: u32) -> Result<()> {
     std::fs::set_permissions(root, std::fs::Permissions::from_mode(0o700))?;
     let path = root.join("broker.sqlite");
     ensure!(!path.is_symlink(), "Unsafe broker database");
-    let mut db = rusqlite::Connection::open(&path)?;
+    if path.exists() {
+        let m = path.symlink_metadata()?;
+        ensure!(
+            m.is_file() && m.uid() == 0 && m.nlink() == 1 && m.mode() & 0o077 == 0,
+            "Broker database must be a private root-owned file without hardlinks"
+        );
+    }
+    let mut db = rusqlite::Connection::open_with_flags(
+        &path,
+        rusqlite::OpenFlags::default() | rusqlite::OpenFlags::SQLITE_OPEN_NOFOLLOW,
+    )?;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
     db.execute_batch("PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS operations(id TEXT PRIMARY KEY,digest TEXT NOT NULL,state TEXT NOT NULL,result TEXT NOT NULL,at INTEGER NOT NULL,peer INTEGER NOT NULL,product TEXT NOT NULL);UPDATE operations SET state='uncertain' WHERE state='running';")?;
     let socket = PathBuf::from(SOCKET);
@@ -513,4 +538,50 @@ pub async fn request(value: Request) -> Result<Value> {
         v["error"].as_str().unwrap_or("Broker request failed")
     );
     Ok(v["value"].clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn journal() -> rusqlite::Connection {
+        let db = rusqlite::Connection::open_in_memory().unwrap();
+        db.execute_batch("CREATE TABLE operations(id TEXT PRIMARY KEY,digest TEXT,state TEXT,result TEXT,at INTEGER,peer INTEGER,product TEXT);").unwrap();
+        db
+    }
+    #[tokio::test]
+    async fn aliases_share_history_and_cannot_resolve_another_products_operation() {
+        let mut db = journal();
+        db.execute(
+            "INSERT INTO operations VALUES(?1,'fixture','uncertain','null',1,0,'proxy-manager')",
+            ["a".repeat(32)],
+        )
+        .unwrap();
+        let history = handle(
+            &mut db,
+            Request::History {
+                product: "pm".into(),
+            },
+            0,
+        )
+        .await
+        .unwrap();
+        assert_eq!(history["operations"].as_array().unwrap().len(), 1);
+        let error = handle(
+            &mut db,
+            Request::Resolve {
+                request_id: "a".repeat(32),
+                product: "netctl".into(),
+                inspection_sha256: "0".repeat(64),
+                reason: "Inspected a different test application".into(),
+            },
+            0,
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("for this application"));
+        let state: String = db
+            .query_row("SELECT state FROM operations", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(state, "uncertain");
+    }
 }

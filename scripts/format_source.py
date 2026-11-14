@@ -61,6 +61,8 @@ def run(check):
         if (
             not name.endswith(".json")
             or name in {"package-lock.json"}
+            # Signatures cover the original bytes, not reformatted JSON.
+            or name == "vendor/core-rust/core-manifest.json"
             or "built/" in name
         ):
             continue

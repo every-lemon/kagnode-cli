@@ -266,4 +266,60 @@ async fn dashboard_requires_local_admin_and_protects_mutations() {
             .unwrap();
         assert_eq!(response.status(), expected);
     }
+    for (nonce, expected) in [
+        ("wrong", StatusCode::FORBIDDEN),
+        (csrf.as_str(), StatusCode::NO_CONTENT),
+    ] {
+        let response = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/v1/logout")
+                    .header(header::COOKIE, format!("kn_daemon={token}"))
+                    .header(header::ORIGIN, "http://127.0.0.1:8750")
+                    .header("x-csrf-token", nonce)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), expected);
+    }
+    assert!(store.session(&token).unwrap().is_none());
+}
+
+#[test]
+fn vendored_core_fallback_matches_its_signed_public_manifest() {
+    use base64::Engine;
+    let raw = include_bytes!("../vendor/core-rust/core-manifest.json");
+    let signature = include_bytes!("../vendor/core-rust/core-manifest.sig");
+    let key = base64::engine::general_purpose::STANDARD
+        .decode("uJzR4gg2djgIrWTepTgtJsPnlbvhUYz/mwO7ubtl8l4=")
+        .unwrap();
+    ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, key)
+        .verify(raw, signature)
+        .unwrap();
+    let manifest: serde_json::Value = serde_json::from_slice(raw).unwrap();
+    let fallback: serde_json::Value =
+        serde_json::from_slice(include_bytes!("../vendor/core-rust/fallback/bundle.json")).unwrap();
+    let compatibility: serde_json::Value =
+        serde_json::from_slice(include_bytes!("../assets/core-bundle.json")).unwrap();
+    assert_eq!(fallback, compatibility);
+    assert_eq!(fallback["source_commit"], manifest["source_commit"]);
+    assert_eq!(fallback["version"], manifest["version"]);
+    assert_eq!(
+        fallback["files"].as_object().unwrap().len(),
+        manifest["files"].as_object().unwrap().len()
+    );
+    for (name, item) in manifest["files"].as_object().unwrap() {
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(fallback["files"][name]["data"].as_str().unwrap())
+            .unwrap();
+        assert_eq!(
+            hex::encode(<sha2::Sha256 as sha2::Digest>::digest(&bytes)),
+            item["sha256"]
+        );
+        assert_eq!(bytes.len() as u64, item["size"].as_u64().unwrap());
+    }
 }

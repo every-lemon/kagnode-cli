@@ -63,7 +63,7 @@ pub fn plan(profile: Profile, web: bool, origin: &str) -> Result<Value> {
         "Configure an origin without paths, credentials or whitespace"
     );
     Ok(
-        json!({"schema":1,"product":"kagnode-daemon","version":env!("CARGO_PKG_VERSION"),"profile":profile,"web":web,"origin":origin,"root":"/srv/kagnode/daemon","service_user":"kn-daemon","units":units(profile,origin).keys().collect::<Vec<_>>(),"production_backup":"scheduled only after a private destination is configured","existing_applications":"retained","existing_cli_migration":"blocked until compatibility is qualified","network_or_ha_activation":false}),
+        json!({"schema":1,"product":"kagnode-daemon","version":env!("CARGO_PKG_VERSION"),"profile":profile,"web":web,"origin":origin,"root":"/srv/kagnode/daemon","service_user":"kn-daemon","units":units(profile,origin).keys().collect::<Vec<_>>(),"unit_definitions":units(profile,origin),"production_backup":"scheduled only after a private destination is configured","existing_applications":"retained","existing_cli_migration":"blocked until compatibility is qualified","network_or_ha_activation":false}),
     )
 }
 fn checked(command: &str, args: &[&str]) -> Result<()> {
@@ -87,6 +87,24 @@ fn new_file(path: &Path, bytes: &[u8], mode: u32) -> Result<()> {
         .open(path)?;
     file.write_all(bytes)?;
     file.sync_all()?;
+    Ok(())
+}
+fn protected_ancestors(path: &Path) -> Result<()> {
+    ensure!(
+        path.is_absolute()
+            && !path
+                .components()
+                .any(|p| matches!(p, std::path::Component::ParentDir)),
+        "Use an absolute protected path"
+    );
+    for parent in path.ancestors().skip(1).filter(|p| p.exists()) {
+        let m = parent.symlink_metadata()?;
+        ensure!(
+            m.is_dir() && !m.file_type().is_symlink() && m.uid() == 0 && m.mode() & 0o022 == 0,
+            "Installation parents must be protected root-owned directories: {}",
+            parent.display()
+        );
+    }
     Ok(())
 }
 pub fn apply(
@@ -118,6 +136,7 @@ pub fn apply(
         Path::new("/var/lib/kagnode-daemon"),
         Path::new("/etc/kagnode/daemon"),
     ] {
+        protected_ancestors(path)?;
         ensure!(
             !path.exists() && !path.is_symlink(),
             "Existing installation retained. Review compatible migration before replacing {}",
@@ -125,6 +144,7 @@ pub fn apply(
         );
     }
     for name in units(profile, origin).keys() {
+        protected_ancestors(&Path::new("/etc/systemd/system").join(name))?;
         ensure!(
             !Path::new("/etc/systemd/system").join(name).exists(),
             "Existing service definition retained: {name}"
@@ -254,6 +274,9 @@ pub fn configure_backup(destination: &Path) -> Result<Value> {
     );
     ensure!(
         destination.is_absolute()
+            && !destination
+                .components()
+                .any(|p| matches!(p, std::path::Component::ParentDir))
             && !destination.starts_with("/etc/kagnode")
             && !destination.starts_with("/var/lib/kagnode-keys"),
         "Choose a backup directory separate from recovery keys and configuration"
@@ -264,6 +287,10 @@ pub fn configure_backup(destination: &Path) -> Result<Value> {
     std::fs::create_dir_all(destination)?;
     let m = destination.metadata()?;
     ensure!(m.uid() == 0, "Backup destination must belong to root");
+    ensure!(
+        m.mode() & 0o077 == 0 || std::fs::read_dir(destination)?.next().is_none(),
+        "Choose a private backup directory; existing shared directory permissions are retained"
+    );
     std::fs::set_permissions(destination, std::fs::Permissions::from_mode(0o700))?;
     let path = PathBuf::from("/etc/kagnode/daemon/backup-destination");
     new_file(&path, destination.to_string_lossy().as_bytes(), 0o600)?;

@@ -1,13 +1,14 @@
 {
   "schema": 1,
-  "application": "cli",
+  "application": "daemon",
   "repository": "every-lemon/kagnode-core",
-  "baseline": "5.0.10",
-  "adapter": "5.0.10",
+  "baseline": "5.0.11",
+  "adapter": "5.0.11",
   "ui_api": 1,
   "patch_range": "5.0.x",
   "automatic_ui_patches": true,
   "backend_updates": "reviewed",
-  "fallback_manifest_sha256": "6ffc01f0178b3aefabeea0edce3f8c5298f71d6042a812db146188361880e121",
-  "source_commit": "efc8e25179932d85e7f9a5edc779a5b27534a919"
+  "fallback_manifest_sha256": "1c3b7f2f316003499c7fc804203d379010d0d6f942a7fb1cf10846dbb5889a90",
+  "source_commit": "d5f613e416efb1e63274763a829380807d8bc433",
+  "signed_ui_manifest_sha256": "1e4ba1ba52383d37e4f00446b07f64f01cd9fcb1828f606de9aaced0aebc7ec4"
 }

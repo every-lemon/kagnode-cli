@@ -1,6 +1,6 @@
 [package]
 name = "kagnode-core"
-version = "5.0.10"
+version = "5.0.11"
 edition = "2024"
 rust-version = "1.88"
 license = "AGPL-3.0-only"

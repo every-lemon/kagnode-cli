@@ -79,6 +79,7 @@ pub fn router(app: App) -> Router {
         .route("/assets/daemon.css", get(css))
         .route("/kagnode-core/{version}/{file}", get(core_asset))
         .route("/api/v1/session", get(session))
+        .route("/api/v1/logout", post(logout))
         .route("/api/v1/settings", get(settings).post(save_settings))
         .route("/api/v1/applications", get(applications))
         .route("/api/v1/applications/{id}/services", get(service_status))

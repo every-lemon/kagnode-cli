@@ -932,7 +932,7 @@ dependencies = [
 
 [[package]]
 name = "kagnode-core"
-version = "5.0.10"
+version = "5.0.11"
 dependencies = [
  "base64 0.22.1",
  "serde_json",
@@ -946,6 +946,7 @@ dependencies = [
  "anyhow",
  "argon2",
  "axum",
+ "base64 0.22.1",
  "chrono",
  "clap",
  "crossterm",
