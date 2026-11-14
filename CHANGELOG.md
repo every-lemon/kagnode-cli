@@ -1,3 +1,11 @@
+# 5.0.2
+
+- Add KagNode. PM to the project-owned setup catalog, retaining the installed proxy-manager identifier.
+- Add per-application Stable/Beta and Auto/Manual update policies, timezone-aware maintenance windows and revision conflicts.
+- Admit unattended updates only with a verified signature and an explicit compatibility contract; retain native recovery and package guards.
+- Verify backup file bytes and preserve numeric ownership before activation.
+- Bundle the reviewed Core 5.0.10 manager with signed full-release provenance.
+
 # Changelog
 
 ## 5.0.1

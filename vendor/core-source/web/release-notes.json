@@ -1,0 +1,8 @@
+{
+  "title": "Shared login and update channels",
+  "items": [
+    "Applications can use the canonical Core login and navigation templates.",
+    "Administrators can independently choose Stable or Beta and automatic or manual Core UI updates.",
+    "Signed compatible UI updates retain offline fallback and rollback."
+  ]
+}
