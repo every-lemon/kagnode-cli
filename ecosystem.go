@@ -41,12 +41,14 @@ func managerCommand(module string, args []string) error {
 	if err = os.WriteFile(file, source, 0600); err != nil {
 		return err
 	}
-	migration, err := assets.ReadFile("assets/consolidate.py")
-	if err != nil {
-		return err
-	}
-	if err = os.WriteFile(directory+"/consolidate.py", migration, 0600); err != nil {
-		return err
+	for _, name := range []string{"consolidate.py", "installer.py", "installer_protocol.py"} {
+		source, err := assets.ReadFile("assets/" + name)
+		if err != nil {
+			return err
+		}
+		if err = os.WriteFile(filepath.Join(directory, name), source, 0600); err != nil {
+			return err
+		}
 	}
 	command := exec.Command("python3", append([]string{file}, args...)...)
 	command.Stdin, command.Stdout, command.Stderr = os.Stdin, os.Stdout, os.Stderr
@@ -74,6 +76,7 @@ func managerCommand(module string, args []string) error {
 type setupChoice struct{ id, name, detail string }
 
 var setupProjects = []setupChoice{
+	{"proxy-manager", "PM", "Proxy servers · discover existing configuration before reviewed adoption"},
 	{"passwords", "Passwords", "Encrypted web vault · Bitwarden engine setup available"},
 	{"mail", "Mail", "Mail server · native provisioning needs its network settings"},
 	{"vpn", "VPN", "VPN server · native updates retain signature verification"},
@@ -272,7 +275,7 @@ func ecosystemSetup() (result error) {
 			fmt.Println("Use kagnode core --help. Core installation/adoption verifies signed manifests and requires explicit baseline review.")
 			continue
 		}
-		action, err := setupSelect("Manage "+project, []setupChoice{{"plan", "Set up application", "Review the project-owned dependencies, configuration and native changes"}, {"install", "Download verified release", "Install application source; does not claim native setup"}, {"status", "Status", "Inspect installed release and recovery state"}, {"check", "Check releases", "Read published versions"}, {"recover", "Recover setup", "Re-run only an explicitly reviewed recovery plan"}})
+		action, err := setupSelect("Manage "+project, []setupChoice{{"plan", "Set up application", "Review the project-owned dependencies, configuration and native changes"}, {"install", "Download verified release", "Install application source; does not claim native setup"}, {"status", "Status", "Inspect installed release and recovery state"}, {"check", "Check releases", "Read published versions"}, {"recover", "Recover setup", "Re-run only an explicitly reviewed recovery plan"}, {"policy", "Update preferences", "Choose Stable/Beta, Auto/Manual and a maintenance window"}})
 		if err != nil {
 			return err
 		}
@@ -284,6 +287,59 @@ func ecosystemSetup() (result error) {
 			return err
 		}
 		base := []string{"--root", root}
+		if action == "policy" {
+			channel, e := setupSelect("Release channel", []setupChoice{{"stable", "Stable", "Published stable releases only"}, {"beta", "Beta", "Compatible beta and stable releases"}})
+			if e != nil {
+				return e
+			}
+			if channel == "" {
+				continue
+			}
+			mode, e := setupSelect("Update mode", []setupChoice{{"manual", "Manual", "Review each application update"}, {"auto", "Auto", "Qualified signed updates during your maintenance window"}})
+			if e != nil {
+				return e
+			}
+			if mode == "" {
+				continue
+			}
+			start, e := setupPrompt("Maintenance start (HH:MM)", "03:00")
+			if e != nil {
+				return e
+			}
+			end, e := setupPrompt("Maintenance end (HH:MM)", "04:00")
+			if e != nil {
+				return e
+			}
+			timezone, e := setupPrompt("Maintenance timezone", "UTC")
+			if e != nil {
+				return e
+			}
+			revision := 0
+			raw, e := os.ReadFile(filepath.Join(root, project, "update-policy.json"))
+			if e == nil {
+				var policy struct {
+					Revision int `json:"revision"`
+				}
+				if json.Unmarshal(raw, &policy) != nil {
+					fmt.Println("Update policy is damaged; inspect it before changing settings.")
+					continue
+				}
+				revision = policy.Revision
+			} else if !os.IsNotExist(e) {
+				fmt.Println(e)
+				continue
+			}
+			choice, e := setupSelect("Save "+channel+" / "+mode+" ("+start+"–"+end+" "+timezone+")?", []setupChoice{{"back", "Back", "Keep the current policy"}, {"save", "Save preferences", "Preserve installed versions; no immediate update"}})
+			if e != nil {
+				return e
+			}
+			if choice == "save" {
+				if e = ecosystemCommand(append(base, "policy", project, "--channel", channel, "--mode", mode, "--revision", strconv.Itoa(revision), "--start", start, "--end", end, "--timezone", timezone)); e != nil {
+					fmt.Println(e)
+				}
+			}
+			continue
+		}
 		if action == "status" || action == "check" {
 			if err = ecosystemCommand(append(base, action, project)); err != nil {
 				fmt.Println(err)
@@ -349,7 +405,7 @@ func ecosystemSetup() (result error) {
 		var e error
 		if action != "recover" {
 			modes := []setupChoice{{"application", "Application or data setup", "Project-owned application service or static artwork setup"}, {"native", "Native installation", "Project-owned host setup; native data paths remain"}, {"adopt", "Adopt existing", "Inspect and record an existing installation without relocating its data"}}
-			if project == "mail" || project == "vpn" || project == "httpboot" {
+			if project == "mail" || project == "vpn" || project == "httpboot" || project == "proxy-manager" {
 				modes[0], modes[1] = modes[1], modes[0]
 			}
 			mode, e = setupSelect("Installation target", modes)

@@ -14,6 +14,10 @@ import fcntl
 import hashlib
 import http.client
 import json
+import datetime
+import platform
+import random
+from zoneinfo import ZoneInfo
 import os
 from pathlib import Path, PurePosixPath
 import pwd
@@ -34,7 +38,15 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+RELEASE_PUBLIC_KEY = b"-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAuJzR4gg2djgIrWTepTgtJsPnlbvhUYz/mwO7ubtl8l4=\n-----END PUBLIC KEY-----\n"
+
 CATALOG = {
+    "proxy-manager": {
+        "name": "KagNode. PM",
+        "repo": "kagnode-pm",
+        "kind": "native",
+        "port": 9443,
+    },
     "passwords": {
         "name": "KagNode Passwords",
         "repo": "kagnode-passwords",
@@ -127,6 +139,14 @@ LIMIT = 512 * 1024 * 1024
 CLI_LINK = Path("/usr/local/bin/kagnode")
 
 
+def patch_version(value):
+    match = re.fullmatch(r"5\.0\.(\d+)(?:-beta\.([1-9]\d*))?", str(value))
+    if not match:
+        return None
+    patch, beta = match.groups()
+    return (int(patch), 1 if beta is None else 0, int(beta or 0))
+
+
 class ManagerError(Exception):
     pass
 
@@ -213,7 +233,7 @@ def validate_metadata(path, value):
             not isinstance(value[field], str) or len(value[field]) > 65536
         ):
             raise MetadataError(path)
-    if "channel" in value and value["channel"] not in ("stable", "preview"):
+    if "channel" in value and value["channel"] not in ("stable", "beta", "preview"):
         raise MetadataError(path)
     if "adapter" in value and value["adapter"] not in ("managed", "native-web"):
         raise MetadataError(path)
@@ -454,8 +474,7 @@ class Manager:
         self.system_root = Path("/") if require_root else system_root
 
     def project(self, name):
-        if name == "authenticator":
-            name = "passwords"
+        name = {"authenticator": "passwords", "pm": "proxy-manager"}.get(name, name)
         if name not in CATALOG:
             raise ManagerError("Unknown application. Use apps list.")
         path = self.root / name
@@ -670,6 +689,16 @@ class Manager:
                 "message": "Use sudo to inspect this installation's private status.",
                 "can_apply": False,
             }
+        try:
+            update_policy = self.update_policy(name)
+        except (MetadataError, ManagerError, ValueError):
+            update_policy = {
+                "channel": "stable",
+                "mode": "manual",
+                "revision": 0,
+                "unavailable": True,
+            }
+            recovery = True
         setup = metadata["setup-operation.json"]
         project_owned = setup.get("state") == "completed" and not state.get(
             "native_binding"
@@ -696,13 +725,17 @@ class Manager:
             ),
             "installed": state.get("version"),
             "active": state.get("active", False),
-            "channel": state.get("channel", "stable"),
+            "channel": update_policy["channel"],
+            "update_policy": update_policy,
             "operation": metadata["operation.json"],
             "service_setup": metadata["setup-operation.json"],
             "runtime_binding": binding,
             "runtime_update_requires_review": project_owned,
             "update_blocked_reason": "Project-owned runtime updates require its reviewed update interface; changing downloaded source cannot update this running service."
             if project_owned
+            else "Native runtime updates require a verified project update adapter; the running service is retained."
+            if CATALOG[name]["kind"] in ("native", "signed-native")
+            and not state.get("native_binding")
             else None,
             "candidate": metadata["candidate.json"],
             "adapter": state.get("adapter", "managed"),
@@ -731,9 +764,12 @@ class Manager:
             raise ManagerError(
                 "Use sudo to check releases for this managed installation."
             )
-        channel = channel or state.get("channel", "stable")
-        if channel not in ("stable", "preview"):
-            raise ManagerError("Choose stable or preview.")
+        policy = self.update_policy(name)
+        channel = channel or policy["channel"]
+        if channel == "preview":
+            channel = "beta"
+        if channel not in ("stable", "beta", "preview"):
+            raise ManagerError("Choose Stable or Beta.")
         repo = CATALOG[name]["repo"]
         if name == "vpn" and state.get("native_binding"):
             return self.check_vpn(path, channel)
@@ -747,7 +783,7 @@ class Manager:
         candidate = None
         for release in releases:
             if release.get("draft") or (
-                release.get("prerelease") and channel != "preview"
+                release.get("prerelease") and channel not in ("beta", "preview")
             ):
                 continue
             assets = {a["name"]: a for a in release.get("assets", [])}
@@ -763,11 +799,42 @@ class Manager:
                 or not re.fullmatch(r"[a-f0-9]{40}", manifest.get("source_commit", ""))
             ):
                 raise ManagerError("Release manifest identity is invalid.")
+            installed_version = patch_version(state.get("version"))
+            release_version = patch_version(manifest.get("version"))
+            if (
+                installed_version
+                and release_version
+                and release_version < installed_version
+            ):
+                continue
+            verified = False
+            signature_asset = assets.get("release-manifest.sig")
+            if signature_asset:
+                signature = request(
+                    https_url(signature_asset["browser_download_url"], repo), limit=1024
+                )
+                # Verification uses the original signed bytes, not a re-encoded object.
+                raw_manifest = request(
+                    https_url(manifest_asset["browser_download_url"], repo)
+                )
+                if json.loads(raw_manifest) != manifest:
+                    raise ManagerError("Release manifest changed while checking")
+                self.verify_release(raw_manifest, signature)
+                verified = True
             matches = [
                 n
                 for n in manifest.get("assets", {})
                 if n.startswith(repo + "_") and n.endswith("_source.tar.gz")
             ]
+            if name == "proxy-manager":
+                arch = {"x86_64": "amd64", "aarch64": "arm64"}.get(platform.machine())
+                matches = [
+                    n
+                    for n in manifest.get("assets", {})
+                    if arch
+                    and n.startswith("kagnode-pm_")
+                    and n.endswith(f"_linux_{arch}.tar.gz")
+                ]
             if name == "logos":
                 matches = [
                     n
@@ -787,6 +854,10 @@ class Manager:
             ):
                 raise ManagerError("Invalid source asset checksum or size.")
             candidate = {
+                "signature_verified": verified,
+                "automatic_update": manifest.get("automatic_update")
+                if verified
+                else None,
                 "repository": manifest["repository"],
                 "release_id": release["id"],
                 "tag": release["tag_name"],
@@ -806,8 +877,193 @@ class Manager:
         return candidate or {
             "available": False,
             "channel": channel,
-            "message": "No compatible release in this channel. Preview releases require an explicit preview selection.",
+            "message": "No compatible release in this channel. Beta releases require an explicit Beta selection.",
         }
+
+    def update_policy(self, name):
+        _, path = self.project(name)
+        value = read(path / "update-policy.json", None)
+        if value is None:
+            state = read(path / "state.json", {})
+            return {
+                "schema": 1,
+                "revision": 0,
+                "channel": "beta"
+                if state.get("channel") == "preview"
+                else state.get("channel", "stable"),
+                "mode": "manual",
+                "window": {"start": "03:00", "end": "04:00", "timezone": "UTC"},
+            }
+        self.validate_policy(value)
+        return value
+
+    @staticmethod
+    def validate_policy(value):
+        if (
+            not isinstance(value, dict)
+            or set(value) != {"schema", "revision", "channel", "mode", "window"}
+            or value["schema"] != 1
+            or type(value["revision"]) is not int
+            or value["revision"] < 0
+            or value["channel"] not in ("stable", "beta")
+            or value["mode"] not in ("manual", "auto")
+        ):
+            raise ManagerError("Invalid update policy")
+        window = value["window"]
+        if not isinstance(window, dict) or set(window) != {"start", "end", "timezone"}:
+            raise ManagerError("Invalid maintenance window")
+        for key in ("start", "end"):
+            if not isinstance(window[key], str) or not re.fullmatch(
+                r"(?:[01]\d|2[0-3]):[0-5]\d", window[key]
+            ):
+                raise ManagerError("Use HH:MM maintenance times")
+        if window["start"] == window["end"]:
+            raise ManagerError("Maintenance window must have a duration")
+        try:
+            ZoneInfo(window["timezone"])
+        except (ValueError, KeyError, TypeError):
+            raise ManagerError("Use an IANA timezone") from None
+
+    def policy(self, name, channel, mode, window, revision):
+        with self.lock(name) as path:
+            previous = self.update_policy(name)
+            if type(revision) is not int or previous["revision"] != revision:
+                raise ManagerError("Update policy changed; reload before saving")
+            value = {
+                "schema": 1,
+                "revision": revision + 1,
+                "channel": channel,
+                "mode": mode,
+                "window": window,
+            }
+            self.validate_policy(value)
+            atomic(path / "update-policy.json", value)
+            atomic(path / "candidate.json", None)
+            return value
+
+    @staticmethod
+    def in_window(policy, now=None):
+        value = (now or datetime.datetime.now(datetime.timezone.utc)).astimezone(
+            ZoneInfo(policy["window"]["timezone"])
+        )
+        current = value.strftime("%H:%M")
+        start = policy["window"]["start"]
+        end = policy["window"]["end"]
+        return (
+            start <= current < end if start < end else current >= start or current < end
+        )
+
+    @staticmethod
+    def automatic_eligible(state, candidate):
+        # A signed release must explicitly qualify this exact installed version.
+        contract = candidate.get("automatic_update")
+        return bool(
+            candidate.get("signature_verified")
+            and isinstance(contract, dict)
+            and contract.get("schema") == 1
+            and isinstance(contract.get("from_versions"), list)
+            and state.get("version") in contract["from_versions"]
+            and contract.get("data_compatibility") == "backward-compatible"
+            and contract.get("scope") in ("application", "native-runtime")
+            and contract.get("requires_engine_change") is False
+            and contract.get("requires_hardware_build") is False
+            and re.fullmatch(
+                r"5\.0\.\d+(?:-beta\.[1-9]\d*)?", candidate.get("version", "")
+            )
+        )
+
+    @staticmethod
+    def verify_release(raw, signature):
+        public_key = RELEASE_PUBLIC_KEY
+        with tempfile.TemporaryDirectory(
+            prefix="kagnode-release-signature-"
+        ) as temporary:
+            root = Path(temporary)
+            (root / "key.pem").write_bytes(public_key)
+            (root / "manifest").write_bytes(raw)
+            (root / "signature").write_bytes(signature)
+            checked = subprocess.run(
+                [
+                    "openssl",
+                    "pkeyutl",
+                    "-verify",
+                    "-rawin",
+                    "-pubin",
+                    "-inkey",
+                    str(root / "key.pem"),
+                    "-in",
+                    str(root / "manifest"),
+                    "-sigfile",
+                    str(root / "signature"),
+                ],
+                capture_output=True,
+                timeout=15,
+            )
+            if checked.returncode:
+                raise ManagerError("Release signature verification failed")
+
+    def cycle(self):
+        for name in CATALOG:
+            if name == "core":
+                continue
+            _, path = self.project(name)
+            if not (path / "state.json").is_file():
+                continue
+            try:
+                policy = self.update_policy(name)
+                if policy["mode"] != "auto" or self.operation_running(path):
+                    continue
+                status = self.status(name)
+                if status.get("needs_recovery") or not status.get("can_apply"):
+                    continue
+                schedule = read(path / "automatic-check.json", {})
+                candidate = read(path / "candidate.json", {}) or {}
+                if time.time() >= schedule.get("next_check", 0):
+                    candidate = self.check(name, policy["channel"])
+                    atomic(
+                        path / "automatic-check.json",
+                        {
+                            "next_check": int(time.time())
+                            + 21600
+                            + random.randrange(900)
+                        },
+                    )
+                if not self.in_window(policy) or not candidate.get("changed"):
+                    continue
+                attempted = read(path / "automatic-attempt.json", {})
+                if attempted.get("release_id") == candidate.get("release_id"):
+                    continue
+                if not self.automatic_eligible(
+                    read(path / "state.json", {}), candidate
+                ):
+                    self.operation(
+                        path,
+                        "review-required",
+                        "This release lacks signed unattended-upgrade qualification; current service retained",
+                    )
+                    continue
+                atomic(
+                    path / "automatic-attempt.json",
+                    {
+                        "release_id": candidate["release_id"],
+                        "started": int(time.time()),
+                        "phase": "starting",
+                    },
+                )
+                self.install(
+                    name, policy["channel"], candidate["release_id"], automatic=True
+                )
+                atomic(
+                    path / "automatic-attempt.json",
+                    {
+                        "release_id": candidate["release_id"],
+                        "completed": int(time.time()),
+                        "phase": "complete",
+                    },
+                )
+            except (ManagerError, OSError, ValueError) as error:
+                if not self.operation_running(path):
+                    self.operation(path, "failed", str(error))
 
     def operation(self, path, phase, message, **extra):
         value = {
@@ -865,7 +1121,7 @@ class Manager:
                 "This installation needs recovery review before another update or activation. Inspect activation.json, migration.json, operation.json and the retained backup."
             )
 
-    def install(self, name, channel="stable", release_id=None):
+    def install(self, name, channel=None, release_id=None, *, automatic=False):
         name, path = self.project(name)
         if name == "core":
             raise ManagerError(
@@ -882,6 +1138,16 @@ class Manager:
             candidate = self.check(name, channel)
             if not candidate.get("release_id"):
                 raise ManagerError(candidate["message"])
+            if automatic:
+                policy = self.update_policy(name)
+                if (
+                    policy["mode"] != "auto"
+                    or not self.in_window(policy)
+                    or not self.automatic_eligible(existing, candidate)
+                ):
+                    raise ManagerError(
+                        "Automatic update is outside policy, incompatible or lacks signed unattended-upgrade qualification"
+                    )
             if release_id is not None and candidate["release_id"] != release_id:
                 raise ManagerError(
                     "The release changed since review. Check again before installing."
@@ -1085,7 +1351,7 @@ class Manager:
         for release in releases:
             if (
                 release.get("draft")
-                or (release.get("prerelease") and channel != "preview")
+                or (release.get("prerelease") and channel not in ("beta", "preview"))
                 or not re.fullmatch(
                     r"v\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?",
                     release.get("tag_name", ""),
@@ -1449,6 +1715,39 @@ class Manager:
         target.mkdir(mode=0o700)
         for folder in ("data", "config"):
             shutil.copytree(path / folder, target / folder, symlinks=True)
+        inventory = []
+        for folder in ("data", "config"):
+            for original in [path / folder, *sorted((path / folder).rglob("*"))]:
+                destination = target / original.relative_to(path)
+                info = original.lstat()
+                if self.require_root:
+                    os.lchown(destination, info.st_uid, info.st_gid)
+                if original.is_symlink():
+                    if os.readlink(original) != os.readlink(destination):
+                        raise ManagerError("Backup symlink verification failed")
+                    inventory.append(
+                        {
+                            "path": str(original.relative_to(path)),
+                            "link": os.readlink(original),
+                        }
+                    )
+                elif original.is_file():
+                    checksum = hashlib.sha256(original.read_bytes()).hexdigest()
+                    if checksum != hashlib.sha256(destination.read_bytes()).hexdigest():
+                        raise ManagerError("Backup content verification failed")
+                    inventory.append(
+                        {
+                            "path": str(original.relative_to(path)),
+                            "sha256": checksum,
+                            "uid": info.st_uid,
+                            "gid": info.st_gid,
+                            "mode": stat.S_IMODE(info.st_mode),
+                        }
+                    )
+        atomic(
+            target / "inventory.json",
+            {"schema": 1, "verified": True, "files": inventory},
+        )
         atomic(target / "state.json", read(path / "state.json", {}))
 
     def service(self, name, action, check=True):
@@ -1736,10 +2035,19 @@ def serve_locked(manager, stop_event=None):
                         "state",
                         "check",
                         "apply",
+                        "policy",
                     ):
                         raise ManagerError("Unknown update action.")
                     if data["action"] == "state":
                         value = {"enabled": True, **manager.status(project)}
+                    elif data["action"] == "policy":
+                        value = manager.policy(
+                            project,
+                            data.get("channel"),
+                            data.get("mode"),
+                            data.get("window"),
+                            data.get("revision"),
+                        )
                     else:
                         with jobs_lock:
                             if active:
@@ -1870,7 +2178,22 @@ def serve_locked(manager, stop_event=None):
             "KagNode update manager is listening on local application sockets.",
             flush=True,
         )
+
+        def scheduler():
+            while not stop_event.is_set():
+                with jobs_lock:
+                    if not active:
+                        active.add("automatic-cycle")
+                        try:
+                            manager.cycle()
+                        finally:
+                            active.discard("automatic-cycle")
+                stop_event.wait(60)
+
+        scheduler_thread = threading.Thread(target=scheduler)
+        scheduler_thread.start()
         stop_event.wait()
+        scheduler_thread.join()
     finally:
         for server, path in servers:
             server.shutdown()
@@ -1897,15 +2220,27 @@ def main():
     migrate.add_argument("--rollback", action="store_true")
     native = sub.add_parser("bind-native")
     native.add_argument("project", choices=list(NATIVE_PROFILES))
-    native.add_argument("--channel", choices=["stable", "preview"], default="stable")
+    native.add_argument(
+        "--channel", choices=["stable", "beta", "preview"], default=None
+    )
+    policy = sub.add_parser("policy")
+    policy.add_argument("project", choices=list(CATALOG))
+    policy.add_argument("--channel", choices=["stable", "beta"])
+    policy.add_argument("--mode", choices=["manual", "auto"])
+    policy.add_argument("--start", default="03:00")
+    policy.add_argument("--end", default="04:00")
+    policy.add_argument("--timezone", default="UTC")
+    policy.add_argument("--revision", type=int)
     panel = sub.add_parser("enable-panel")
     panel.add_argument("project", choices=list(CATALOG))
     panel.add_argument("--user", required=True)
     for command in ("status", "check", "install", "update"):
         p = sub.add_parser(command)
-        p.add_argument("project", choices=list(CATALOG) + ["authenticator"])
+        p.add_argument("project", choices=list(CATALOG) + ["authenticator", "pm"])
         if command != "status":
-            p.add_argument("--channel", choices=["stable", "preview"], default="stable")
+            p.add_argument(
+                "--channel", choices=["stable", "beta", "preview"], default=None
+            )
         if command in ("install", "update"):
             p.add_argument("--release-id", type=int)
     for command in ("plan", "apply", "health", "recover", "installer-status"):
@@ -1968,6 +2303,19 @@ def main():
         result = manager.activate_cli()
     elif args.command == "enable-panel":
         result = enable_panel(manager, args.project, args.user)
+    elif args.command == "policy":
+        if args.channel is None and args.mode is None:
+            result = manager.update_policy(args.project)
+        elif args.channel is None or args.mode is None or args.revision is None:
+            raise ManagerError("Choose channel, mode and the reviewed policy revision")
+        else:
+            result = manager.policy(
+                args.project,
+                args.channel,
+                args.mode,
+                {"start": args.start, "end": args.end, "timezone": args.timezone},
+                args.revision,
+            )
     elif args.command == "status":
         result = manager.status(args.project)
     elif args.command == "check":

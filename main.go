@@ -21,7 +21,7 @@ import (
 //go:embed assets/*.txt assets/ecosystem.py assets/consolidate.py assets/core_manager.py assets/core-manager-manifest.json assets/installer.py assets/installer_protocol.py
 var assets embed.FS
 
-const version = "5.0.1"
+const version = "5.0.2"
 
 var applicationIDs = []string{"passwords", "mail", "vpn", "httpboot", "media", "entropy", "logos", "cli", "core"}
 

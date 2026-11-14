@@ -37,17 +37,17 @@ mail storage or native service configuration.
 
 ## Available operations
 
-| Application | Setup capability | Boundary |
-| --- | --- | --- |
-| Passwords | Project-owned Python application service in shared root | Globally usable Python 3.12+; encrypted vault initialization stays in the web app |
-| Media | Project-owned Node.js 24 web application in shared root | No worker activation, FFmpeg/transcoding or codec qualification |
-| Entropy | Project-owned loopback OS-backed service in shared root | Globally usable Rust 1.88+; no video, enclave or entropy-quality qualification |
-| Logos | Data-only artwork/viewer copy with exact inventory health | No accounts, web service or native daemon |
-| CLI | Linux amd64/arm64 binary or reviewed Go source build | Opt-in PATH activation; preserve existing executable ownership |
-| Core | Dedicated signed manager and explicit reviewed helper import | UI patches cannot replace a backend helper |
-| Mail | Dedicated Ubuntu 24.04 native installer, reviewed noninteractive fields | DNS, external TLS and real delivery remain separate checks; existing guarded web updater retained |
-| VPN | Reviewed native installer handoff with a real TTY | Network choices remain in the owning console; existing signed updater retained |
-| HTTP Boot | Reviewed interactive Server authority console | Existing native Server package is required; no images, Client, Builder or hardware qualification |
+| Application | Setup capability                                                        | Boundary                                                                                          |
+| ----------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Passwords   | Project-owned Python application service in shared root                 | Globally usable Python 3.12+; encrypted vault initialization stays in the web app                 |
+| Media       | Project-owned Node.js 24 web application in shared root                 | No worker activation, FFmpeg/transcoding or codec qualification                                   |
+| Entropy     | Project-owned loopback OS-backed service in shared root                 | Globally usable Rust 1.88+; no video, enclave or entropy-quality qualification                    |
+| Logos       | Data-only artwork/viewer copy with exact inventory health               | No accounts, web service or native daemon                                                         |
+| CLI         | Linux amd64/arm64 binary or reviewed Go source build                    | Opt-in PATH activation; preserve existing executable ownership                                    |
+| Core        | Dedicated signed manager and explicit reviewed helper import            | UI patches cannot replace a backend helper                                                        |
+| Mail        | Dedicated Ubuntu 24.04 native installer, reviewed noninteractive fields | DNS, external TLS and real delivery remain separate checks; existing guarded web updater retained |
+| VPN         | Reviewed native installer handoff with a real TTY                       | Network choices remain in the owning console; existing signed updater retained                    |
+| HTTP Boot   | Reviewed interactive Server authority console                           | Existing native Server package is required; no images, Client, Builder or hardware qualification  |
 
 Application-mode adapters gate Ubuntu 24.04 and Debian 12/13 against their actual prerequisite versions and permissions. Native adapters retain their owning project's stricter OS/architecture limits. A failed or exited interactive installer never becomes a successful setup without health verification.
 
@@ -233,3 +233,11 @@ mutation, preserving their inode and bytes so existing contention still works.
 Status probes never chmod or replace a lock. Damaged controls produce recovery
 diagnostics and disable apply; review them deliberately instead of deleting a
 lock that another operation may still hold.
+
+## Update preferences
+
+`sudo kagnode apps policy PROJECT` displays its current policy and revision. Set it with `--channel stable|beta --mode manual|auto --revision N --start 03:00 --end 04:00 --timezone UTC`. The legacy `preview` release-check/install option remains accepted as Beta. Core has its own independent policy through `kagnode core policy APP --channel stable|beta --automatic on|off`.
+
+New application policies default to Stable and Manual. Auto runs only inside the chosen timezone-aware window and never bypasses native/project-owned update restrictions. A release must have a verified Ed25519 signature and a signed `automatic_update` contract declaring this exact installed version, backward-compatible data, supported application/native scope, and no engine migration or hardware build. Otherwise the manager reports review-required and retains the running application. Interrupted attempts are not replayed. Logs distinguish a downloaded source archive from an actual updated runtime.
+
+KagNode. PM uses catalog ID `proxy-manager` (`pm` is an alias) and repository `every-lemon/kagnode-pm`. Existing service/data paths retain their compatibility names. PM source-only archives cannot provision a native runtime; setup requires its checked architecture-specific application payload.

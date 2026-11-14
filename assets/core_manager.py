@@ -75,10 +75,17 @@ def _lock_descriptor(path):
 
 
 def version(value):
-    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", str(value))
+    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:-beta\.([1-9]\d*))?", str(value))
     if not match:
-        raise ValueError("Only stable Core patch versions can be activated")
-    return tuple(map(int, match.groups()))
+        raise ValueError("Use a stable patch or an explicit beta.N Core version")
+    major, minor, patch, beta = match.groups()
+    return (
+        int(major),
+        int(minor),
+        int(patch),
+        1 if beta is None else 0,
+        int(beta or 0),
+    )
 
 
 def atomic(path, value):
@@ -277,6 +284,10 @@ def application_lock(path, app):
     if not isinstance(value, dict):
         raise ValueError("Application Core declaration must be an object")
     baseline = value.get("baseline")
+    if "-" in str(baseline) or "-" in str(value.get("adapter", "")):
+        raise ValueError(
+            "Application baselines and backend adapters require stable versions"
+        )
     parsed = version(baseline)
     version(value.get("adapter"))
     if (
@@ -408,8 +419,14 @@ class Manager:
         result = {
             "enabled": True,
             **{k: v for k, v in state.items() if k not in ("uid", "gid")},
+            "channel": state.get("channel", "stable"),
+            "mode": "auto" if state.get("automatic", False) else "manual",
             "summaries": state.get("summaries", True),
-            "capabilities": {"update_summaries": True, "automatic_ui_patches": True},
+            "capabilities": {
+                "update_summaries": True,
+                "automatic_ui_patches": True,
+                "release_channels": True,
+            },
             "candidate": read(self.app(name) / "candidate.json"),
             "operation": read(self.app(name) / "operation.json", {}),
         }
@@ -501,7 +518,9 @@ class Manager:
         )
         choices = []
         for release in releases:
-            if release.get("draft") or release.get("prerelease"):
+            if release.get("draft") or (
+                release.get("prerelease") and state.get("channel", "stable") != "beta"
+            ):
                 continue
             try:
                 tag = release["tag_name"].removeprefix("v")
@@ -515,10 +534,14 @@ class Manager:
             assets = {item["name"]: item for item in release.get("assets", [])}
             if not {"core-manifest.json", "core-manifest.sig"} <= assets.keys():
                 continue
+            if bool(release.get("prerelease")) != ("-beta." in tag):
+                continue
             choices.append((parsed, release))
         candidate = None
         for _, release in sorted(choices, key=lambda x: x[0], reverse=True):
-            candidate = self._release_candidate(release)
+            candidate = self._release_candidate(
+                release, allow_beta=state.get("channel", "stable") == "beta"
+            )
             candidate["changed"] = candidate["version"] != state["version"]
             break
         atomic(self.app(name) / "candidate.json", candidate)
@@ -528,9 +551,11 @@ class Manager:
         )
         return self.status(name)
 
-    def _release_candidate(self, release):
-        if release.get("draft") or release.get("prerelease"):
-            raise ValueError("Only published stable Core releases can be reviewed")
+    def _release_candidate(self, release, allow_beta=False):
+        if release.get("draft") or (release.get("prerelease") and not allow_beta):
+            raise ValueError(
+                "Only published stable releases are allowed unless Beta is explicitly selected"
+            )
         assets = {item["name"]: item for item in release.get("assets", [])}
         if not {"core-manifest.json", "core-manifest.sig"} <= assets.keys():
             raise ValueError("Core release has no signed manifest")
@@ -538,6 +563,8 @@ class Manager:
         signature = fetch(assets["core-manifest.sig"]["browser_download_url"], 1024)
         verify_signature(raw, signature)
         manifest = validate_manifest(json.loads(raw))
+        if bool(release.get("prerelease")) != ("-beta." in manifest["version"]):
+            raise ValueError("Core release channel and signed version differ")
         if release["tag_name"] != "v" + manifest["version"]:
             raise ValueError("Core tag and manifest differ")
         archive = manifest.get("archive", {})
@@ -550,6 +577,7 @@ class Manager:
             raise ValueError("Invalid signed Core archive")
         candidate = {
             "version": manifest["version"],
+            "channel": "beta" if release.get("prerelease") else "stable",
             "release_id": release["id"],
             "manifest": manifest,
             "signature": base64.b64encode(signature).decode(),
@@ -571,7 +599,7 @@ class Manager:
         )
         if release.get("tag_name") != "v" + requested:
             raise ValueError("Core release tag does not match the reviewed baseline")
-        return self._release_candidate(release)
+        return self._release_candidate(release, allow_beta="-beta." in requested)
 
     def _cached_version(self, requested):
         version(requested)
@@ -796,17 +824,24 @@ class Manager:
             },
         }
 
-    def policy(self, name, automatic=None, summaries=None):
-        if automatic is None and summaries is None:
+    def policy(self, name, automatic=None, summaries=None, channel=None):
+        if automatic is None and summaries is None and channel is None:
             raise ValueError("Choose an update policy")
         updates = {}
+        if channel is not None:
+            if channel not in ("stable", "beta"):
+                raise ValueError("Choose Stable or Beta")
+            updates["channel"] = channel
         for key, value in (("automatic", automatic), ("summaries", summaries)):
             if value is not None:
                 if type(value) is not bool:
                     raise ValueError("Core policies must be true or false")
                 updates[key] = value
         with self.lock():
-            atomic(self.app(name) / "state.json", {**self.state(name), **updates})
+            previous = self.state(name)
+            atomic(self.app(name) / "state.json", {**previous, **updates})
+            if channel is not None and previous.get("channel", "stable") != channel:
+                atomic(self.app(name) / "candidate.json", None)
         return self.status(name)
 
     def adopt(self, name, lock_file, expected_baseline):
@@ -1014,7 +1049,10 @@ def _serve_locked(manager, stop):
                         result = manager.install(name, data.get("release_id"))
                     elif action == "policy":
                         result = manager.policy(
-                            name, data.get("automatic"), data.get("summaries")
+                            name,
+                            data.get("automatic"),
+                            data.get("summaries"),
+                            data.get("channel"),
                         )
                     elif action == "rollback":
                         result = manager.rollback(name)
@@ -1109,6 +1147,7 @@ def main():
         if operation == "policy":
             a.add_argument("--automatic", choices=("on", "off"))
             a.add_argument("--summaries", choices=("on", "off"))
+            a.add_argument("--channel", choices=("stable", "beta"))
         if operation == "apply":
             a.add_argument("--release-id", type=int)
     args = p.parse_args()
@@ -1132,6 +1171,7 @@ def main():
             args.app,
             None if args.automatic is None else args.automatic == "on",
             None if args.summaries is None else args.summaries == "on",
+            args.channel,
         )
     print(json.dumps(result, indent=2))
 
