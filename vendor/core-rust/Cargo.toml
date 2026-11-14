@@ -1,0 +1,18 @@
+[package]
+name = "kagnode-core"
+version = "5.0.10"
+edition = "2024"
+rust-version = "1.88"
+license = "AGPL-3.0-only"
+description = "Locally served KagNode Core UI adapter for native Rust applications"
+repository = "https://github.com/every-lemon/kagnode-core"
+include = ["src/**", "fallback/**", "Cargo.toml", "README.md", "LICENSE"]
+
+[dependencies]
+base64 = "0.22"
+serde_json = "1"
+sha2 = "0.10"
+
+[dev-dependencies]
+tempfile = "3"
+

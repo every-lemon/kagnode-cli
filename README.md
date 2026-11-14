@@ -1,37 +1,37 @@
 <p align="center"><img src="assets/kagnode-wordmark.svg" width="440" alt="KagNode."></p>
 
-# KagNode CLI
+# KagNode. Daemon
 
 ## Overview
 
-A keyboard-only Linux application manager and KagNode Account client. Review real project-owned installation plans before changing your system.
+An administrator workspace for KagNode applications, with a shared Core dashboard and a Rust terminal interface. The repository was renamed from `kagnode-cli`; existing releases, account credentials, native data and the `kagnode` command remain compatible.
 
 ## Release status
 
-**5.0.2** is the coordinated stable CLI release, replacing fictional examples with real application setup and browser PKCE sign-in.
+The released **5.0.2** compatibility CLI remains available. The **5.0.3 Rust Daemon candidate** adds local administration, Core presentation, terminal folder navigation, reviewed native service operations, encrypted control-database backups and fresh-install profiles. Qualification and migration work is tracked in [the Rust migration matrix](docs/RUST-MIGRATION.md).
 
-Stable scope covers the CLI and tested installer orchestration. Each project declares its supported operating systems and setup modes; native services and hardware retain separate verification boundaries. Fresh typed runtimes require a project-owned reviewed update interface; switching downloaded source is explicitly blocked from pretending to upgrade them. Existing guarded native updaters remain supported. See [verification](docs/VERIFICATION.md) and [changelog](CHANGELOG.md).
+The Rust candidate does not replace an existing CLI installation until compatibility is qualified. Remote node management, live networking, automatic HA and Core Server Offloading remain gated. Saving a cluster declaration is not HA activation. Existing application runtimes and data stay in place.
 
 ## Features
 
-- Keyboard-only application setup wizard and a shared installation root.
-- GitHub release checks, verified source installs and local admin-panel update manager.
-- Optional digest-pinned Vaultwarden engine setup for KagNode Passwords.
-
-- Login with KagNode through the shared account sign-in and approval journey.
-- Browser authorization with a private loopback return, PKCE and validated fresh proof; explicit headless fallback.
-- Project-owned dependency, configuration, review, health and recovery interfaces.
-- Entropy and signed Core catalog entries. Retired demo commands explain their removal; existing user data remains.
-
-Optional KagNode Account linking syncs your display name and photo after explicit approval. Your local application administrator can disable it. Local sign-in and permissions stay independent.
+- Rust administrator sessions, Argon2 credentials, CSRF protection, revision conflicts and audit history.
+- Canonical Core login, sidebar, folder navigation, search, account controls and preferences.
+- Keyboard/mouse terminal browsing and scriptable JSON inspection.
+- Root-enrolled service bindings, reviewed definition/state hashes, request idempotency and uncertain-operation recovery.
+- Fresh Light/Production install profiles; optional web dashboard with private local administration retained.
+- Consistent encrypted Daemon database snapshots with restore checks; application data retains separate backup ownership.
+- Typed HA declarations and fail-closed promotion preconditions; live cluster activation remains unqualified.
+- Retained compatibility CLI source and existing account/installer/update flows during staged Rust replacement.
 
 ## Requirements
 
-Linux amd64 or arm64. Account sign-in uses the compiled binary. Application/Core management also requires Python 3.10+ and the system tools declared by the selected project. Building from source requires Go as specified by go.mod; packaged binaries do not require Go or Node.js.
+The Rust candidate requires Rust 1.88 or newer to build. Native setup targets Ubuntu 24.04 and Debian 13; Linux amd64/arm64 qualification is recorded separately. The new Rust server/terminal runtime does not require Node.js, Go or Python. Browser UI remains HTML/CSS/JavaScript. Existing third-party engines keep their own dependencies.
+
+The retained 5.0.2 compatibility CLI uses Go and Python management helpers, as documented in its release. It stays available until each Rust replacement passes parity and upgrade checks.
 
 ## Installation and downloads
 
-Download from [GitHub Releases](https://github.com/every-lemon/kagnode-cli/releases). Verify `SHA256SUMS` before extracting or installing a package.
+Download from [GitHub Releases](https://github.com/every-lemon/kagnode-daemon/releases). Verify `SHA256SUMS` before extracting or installing a package.
 
 | Payload                   | Formats                                      | Support                                     |
 | ------------------------- | -------------------------------------------- | ------------------------------------------- |
