@@ -1,0 +1,131 @@
+/* Application layout only. Shared controls and motion come from Core. */
+body {
+  margin: 0;
+  background: var(--kn-bg);
+  color: var(--kn-text);
+  font:
+    15px/1.6 system-ui,
+    sans-serif;
+}
+main {
+  max-width: 1120px;
+  margin: auto;
+  padding: 32px;
+}
+.topbar {
+  min-height: 68px;
+  padding: 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--kn-line);
+}
+h1 {
+  font-size: 30px;
+  letter-spacing: -0.035em;
+}
+h2 {
+  font-size: 21px;
+}
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.stack {
+  display: grid;
+  gap: 16px;
+}
+.setting-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+}
+.panel,
+.card {
+  border: 1px solid var(--kn-line);
+  background: var(--kn-panel);
+  border-radius: 12px;
+  padding: 24px;
+  margin: 16px 0;
+}
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 16px;
+}
+.card {
+  color: inherit;
+  text-decoration: none;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin: 0;
+}
+.card small {
+  color: var(--kn-muted);
+  margin-left: auto;
+}
+.card:hover {
+  border-color: var(--kn-focus);
+}
+.muted,
+small {
+  color: var(--kn-muted);
+}
+button,
+.button {
+  font: inherit;
+  cursor: pointer;
+  border: 1px solid var(--kn-line);
+  padding: 10px 16px;
+  background: var(--kn-bg);
+  color: var(--kn-text);
+}
+.primary {
+  background: var(--kn-accent);
+  color: white;
+  border-color: var(--kn-accent);
+}
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+fieldset {
+  border: 1px solid var(--kn-line);
+  border-radius: 12px;
+  padding: 20px;
+}
+footer {
+  padding: 24px;
+  color: var(--kn-muted);
+}
+a {
+  color: var(--kn-link);
+}
+[data-core-icon] svg {
+  width: 20px;
+  height: 20px;
+}
+body:has([data-core-login]) {
+  min-height: 100dvh;
+}
+body:has([data-core-login]) main {
+  max-width: none;
+  margin: 0;
+}
+#page-status:empty {
+  display: none;
+}
+@media (max-width: 1023px) {
+  .topbar {
+    padding-left: 68px;
+  }
+  main {
+    padding: 20px;
+  }
+  .panel {
+    padding: 18px;
+  }
+}

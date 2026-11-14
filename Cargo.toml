@@ -1,0 +1,40 @@
+[package]
+name = "kagnode-daemon"
+version = "5.0.3"
+edition = "2024"
+rust-version = "1.88"
+license = "AGPL-3.0-only"
+repository = "https://github.com/every-lemon/kagnode-daemon"
+description = "KagNode application management daemon, Core dashboard and terminal workspace"
+
+[[bin]]
+name = "kagnode"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+argon2 = "0.5"
+axum = { version = "0.8", features = ["form", "json"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+clap = { version = "4.5", features = ["derive", "env"] }
+crossterm = "0.28"
+getrandom = "0.4"
+hex = "0.4"
+kagnode-core = { path = "vendor/core-rust", version = "5.0.11" }
+libc = "0.2"
+ratatui = "0.29"
+rpassword = "7"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "blocking"] }
+ring = "0.17"
+rusqlite = { version = "0.38", features = ["bundled", "backup"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tokio = { version = "1", features = ["full"] }
+zeroize = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+base64 = "0.22"
+tempfile = "3"
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
